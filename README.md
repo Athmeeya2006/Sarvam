@@ -49,7 +49,7 @@ Plus: **📄 Check a document**. Upload the fake "CBI arrest warrant" the scamme
 14. [Privacy and ethics](#14-privacy-and-ethics)
 15. [Project structure](#15-project-structure)
 16. [Roadmap](#16-roadmap)
-17. [Impact, team and credits](#17-impact-team-and-credits)
+17. [Impact](#17-impact)
 
 ---
 
@@ -442,6 +442,14 @@ All prompts are in [`app/prompts.py`](app/prompts.py). Every LLM call uses a str
 | 7 | Genuine bank EMI call (audio): risk **12** (< 40) | ✅ |
 | 8 | Tamil scam call (audio): risk **98** · 5 flag types · Tamil warning audio (`ta-IN`) | ✅ |
 
+**Deployment results (17 Oct 2026)**
+
+| Where | E2E (live APIs) | Browser test (fake mic in Chrome) | Cross-instance test |
+|---|---|---|---|
+| Your computer (in-memory store) | ✅ 26/26 | ✅ 19/19 | n/a |
+| 3 separate server processes + Redis (Upstash REST emulator) | ✅ 26/26 | ✅ 19/19 | ✅ all steps, alternating between 2 independent servers |
+| **Live on Vercel** (Mumbai, Upstash Redis) | ✅ 26/26 | ✅ 19/19 | ✅ all steps |
+
 **Noisy-room test** (`eval_calls.py --audio --noise`, Bulbul voice mixed with loud pink noise and encoded as browser webm/opus):
 
 | Call | Peak risk | Notes |
@@ -524,12 +532,9 @@ kavach/
 * **UPI hook**: pause or confirm transfers while a call is flagged
 * **WebSocket streaming STT** (`saaras:v3-realtime`): sub-second detection instead of ~6 s chunks
 
-## 17. Impact, team and credits
+## 17. Impact
 
 **Impact.** Every digital-arrest victim we warn keeps their savings. Every minute Dadi wastes is a minute a scammer is not calling someone's grandparent. Every UPI ID she collects is a lead for the police.
 
-**Team:** *(add names)*
-
-**Acknowledgements:** Team **Sarvam AI** for Saaras, Sarvam-105B, Bulbul and Sarvam Vision · Team **Infinium** · **IIIT Hyderabad**.
 
 <sub>Kavach is a hackathon prototype. If you are being threatened on a call right now: hang up and call **1930**, or report at **cybercrime.gov.in**.</sub>
