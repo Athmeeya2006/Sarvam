@@ -319,6 +319,12 @@ def index():
     return FileResponse(config.ROOT / "static" / "index.html")
 
 
+@app.get("/llms.txt", include_in_schema=False)
+def llms_txt():
+    """Plain-text guide for AI models (llmstxt.org convention)."""
+    return FileResponse(config.ROOT / "llms.txt", media_type="text/plain; charset=utf-8")
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True, "key_loaded": bool(config.get_api_key(required=False)),

@@ -1,0 +1,105 @@
+# Kavach (कवच)
+
+> Kavach is a live AI shield against "digital arrest" scam calls in India, built on all four Sarvam AI model families. It listens to a speakerphone call, detects the scam in real time with quoted evidence, warns the user out loud in their own language, and can hand the call to "Dadi Mode": an AI grandmother with a fictional identity who wastes the scammer's time and collects his UPI ID, phone number and bank account for a ready-to-file police complaint (helpline 1930, cybercrime.gov.in). It also checks fake "arrest warrant" documents with Sarvam Vision.
+
+- Live app: https://kavach-rosy-six.vercel.app
+- Source: https://github.com/Athmeeya2006/Sarvam
+- Machine-readable health check: https://kavach-rosy-six.vercel.app/api/health
+- Stack: Python 3.12, FastAPI, the `sarvamai` SDK (plus raw HTTP for chat), one static HTML page (Tailwind CDN, vanilla JS). No database except an optional Redis session store.
+- Languages: Hindi, Tamil, code-mixed Hinglish, Bengali, Marathi, Telugu, Kannada, English.
+- Status (17 Oct 2026): every flow works end to end against the real Sarvam APIs, both locally and on Vercel. E2E test 26/26, browser test 19/19, cross-instance test all green.
+
+## What the app does (one user, one flow, 3 acts)
+
+1. Detect: the user taps "Protect this call" with the call on speaker. The browser records ~6 s audio chunks. Saaras v4 transcribes them (auto language detection, scam keyterms). A keyword pre-scorer moves the risk meter instantly, then Sarvam-105B returns a strict-JSON risk score (0 to 100), scam type and red flags. Every red flag must quote the caller's exact words.
+2. Warn: when the AI score reaches 70, Bulbul v3 speaks a calm warning in the user's language ("hang up, report to 1930") and the screen turns red ("CALL KAATIYE").
+3. Fight back (Dadi Mode): Kavach plays an AI grandmother persona through the speaker. Each scammer line goes to Saaras, then evidence extraction (regex plus Sarvam-105B) and the Dadi persona reply (Sarvam-105B) run in parallel, then Bulbul speaks the reply. An Evidence Locker, a "time wasted" counter and a "Scam DNA" playbook stage update live. "End & report" writes a 1930 / cybercrime.gov.in complaint containing every evidence item, plus a family alert (simulated, clearly labelled).
+4. Document check: an uploaded "CBI warrant" or "RBI notice" goes to Sarvam Vision (Doc AI extract with per-field confidence, plus digitise for full OCR, in parallel), then a Sarvam-105B verdict (likely_fake, suspicious or looks_genuine) with quoted reasons, read aloud by Bulbul.
+5. Text mode: typed input goes through the exact same pipeline (backup for noisy rooms or no microphone).
+
+## Sarvam models and how they are called
+
+- Speech to text: `saaras:v4` with `keyterms` (24 scam words) and `input_audio_codec` (webm from Chrome, mp4 from Safari). Falls back to `saaras:v3` with `mode="codemix"` if v4 errors. Synchronous REST, audio under 30 s.
+- Chat: `sarvam-105b` via raw HTTP `POST https://api.sarvam.ai/v1/chat/completions` with `response_format` set to a strict `json_schema` (fallback chain: json_schema, then json_object, then "Return valid JSON only."). `reasoning_effort` is sent as null (thinking off): measured ~0.5 s versus ~6.5 s with "low". Raw HTTP is used because the SDK drops `reasoning_effort=None`.
+- Text to speech: `bulbul:v3`. Warning voice `shubh` at pace 1.0. Dadi voice `roopa` (Hindi) or `kavitha` (Tamil) at pace 0.8. Returns base64 WAV.
+- Vision: Sarvam Vision Document AI, job based (submit, poll status, fetch results). `doc_ai.extract` with a 13-field notice schema plus `doc_ai.digitise`. Digitise results are read as JSON blocks because `format="md"` is refused when the job produced HTML.
+- Auth: header `api-subscription-key`, key read only from the `SARVAM_API_KEY` environment variable.
+
+## Key design decisions (and why)
+
+- Only the AI score can trigger the red takeover. The keyword pre-scorer is capped at 65, below the threshold of 70, because keywords alone scored a genuine bank call at 80 (it said "never share your OTP"). The AI kept that call at 25.
+- Explainability: the server drops any red flag whose `evidence_quote` is not actually found in the transcript (`risk.verify_evidence`).
+- Calibration: three few-shot examples (scam 88, genuine bank EMI call 8, ambiguous KYC call 52), and an explicit rule that an authority claim alone scores at most 45, so the meter climbs as the scam escalates.
+- Dadi safety: she only uses a fictional persona card (Kamla Devi, 74, Lucknow; Meenakshi Paati, 72, Madurai), never claims to have paid, never reveals she knows it is a scam, and is never abusive. `dadi.sanitise()` removes any run of 3 or more digits (Latin, Devanagari or Tamil numerals) and any value in `KAVACH_REAL_DATA_BLOCKLIST` before her line is spoken.
+- Latency masking: six filler clips per language ("Haan beta… ek minute…") are pre-generated into `static/fillers/` and play the moment the scammer stops talking.
+- Half-duplex anti-echo: the microphone pauses whenever Kavach speaks and resumes 300 ms after; chunks that overlap Kavach's own audio are discarded; silent chunks are skipped in Dadi Mode using a Web Audio level meter.
+- Document hard rule: any "official" notice that demands a payment or gives a payment account is forced to `likely_fake`.
+- Sessions: stored as a Redis hash (Upstash REST API) when `KV_REST_API_URL`/`KV_REST_API_TOKEN` or `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are set, otherwise in memory. Each request writes back only the fields it changed, under short cross-instance locks (SET NX PX plus a compare-and-delete unlock script). This makes the app correct on serverless hosts where requests of one call land on different instances. The AI analysis is debounced to one call in flight per session through a store lock.
+- Privacy: listening is user-activated only, no audio is stored, a session is deleted at "End & report", and anything idle expires after one hour.
+
+## Deployment
+
+- Vercel project "kavach" (team athmeeya2006s-projects), Python function `app/main.py` (detected automatically as FastAPI), region `bom1` (Mumbai), `maxDuration` 60 s (`vercel.json`).
+- Upstash for Redis (free plan, Mumbai) connected through the Vercel Marketplace; it injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
+- `SARVAM_API_KEY` is a sensitive Vercel environment variable. `.vercelignore` excludes `.env`, the venv, tests, scripts and docs from uploads.
+- The project was deployed with the Vercel CLI from the local folder (not Git-linked): pushing to GitHub does not redeploy. Run `vercel --prod` from the repo root.
+- Request bodies are limited to 4.5 MB on Vercel, so the browser downscales large photos before upload.
+- Locally: `pip install -r requirements.txt`, put the key in `.env`, run `uvicorn app.main:app --port 8000`. The microphone requires HTTPS or the same machine.
+
+## HTTP API
+
+- `GET /api/health`: `{ok, key_loaded, store, serverless, models, chunk_seconds, threshold, languages}` (never returns the key)
+- `POST /api/session/start` body `{"user_lang": "hi-IN"}`: returns `{session_id, language, threshold}`
+- `POST /api/session/{id}/chunk` multipart `audio` + `mime`: Saaras, instant score, Sarvam-105B analysis. Returns `{chunk_text, detected_lang, full_transcript, instant_score, ai_result, flags, peak_score, latencies_ms}`
+- `POST /api/demo/text` body `{"session_id", "text", "dadi": false, "lang"}`: text mode for the chunk or Dadi pipeline
+- `POST /api/session/{id}/warn` body `{"language"}`, optional `?force=true`: Bulbul warning `{warning_text, language, audio_base64}`, 429 during the 20 s cooldown
+- `POST /api/session/{id}/language` body `{"language"}`: change the user language mid-call
+- `POST /api/session/{id}/dadi/start`: enables Dadi Mode, returns the opening line audio
+- `POST /api/session/{id}/dadi/turn` multipart `audio` + `mime`: returns `{scammer_text, dadi_text, dadi_audio_b64, stalling_tactic, new_evidence, evidence_locker, time_wasted_s, scam_dna}`
+- `GET /api/fillers?lang=hi-IN`: pre-generated filler clips
+- `POST /api/verify-document` multipart `image` + `language`: `{verdict, confidence, reasons, spoken_summary, audio_base64, fields, field_confidence, ocr_text}`
+- `POST /api/session/{id}/end`: complaint (user language and English), family alert, evidence; then deletes the session
+- `GET /llms.txt`: this file
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/README.md): full judge-ready documentation: problem, architecture diagrams, quick start, Vercel deploy, user guide, 90-second demo script, configuration, API samples, testing results, troubleshooting, privacy
+- [NOTES.md](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/NOTES.md): verified Sarvam API facts (endpoints, model IDs, limits, speaker names, gotchas) checked against docs.sarvam.ai and the `sarvamai` 0.1.37 SDK
+
+## Source code
+
+- [app/main.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/app/main.py): FastAPI routes, Session model, the detect / warn / Dadi / document / report pipelines, store-backed persistence with per-field writes
+- [app/sarvam_client.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/app/sarvam_client.py): one function per Sarvam model (transcribe, chat_json, speak, read_document, extract_fields) with timeouts, retries, fallbacks and latency logging
+- [app/prompts.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/app/prompts.py): every Sarvam-105B prompt and JSON schema (risk analysis with few-shots, warning, Dadi persona, evidence extraction, document verdict, complaint)
+- [app/risk.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/app/risk.py): multilingual keyword pre-scorer, red-flag taxonomy and labels, AI result cleanup, evidence-quote verification
+- [app/evidence.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/app/evidence.py): Evidence Locker: regex for UPI IDs, Indian mobile numbers, IFSC, account numbers (including spoken digits and "dot/at" UPI IDs), de-duplication
+- [app/dadi.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/app/dadi.py): Dadi persona replies, filler clips, the number scrubber
+- [app/store.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/app/store.py): MemoryStore and UpstashStore (Redis REST) with cross-instance locks
+- [app/config.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/app/config.py): model IDs, keyterms, voices, thresholds, languages, environment variables
+- [static/index.html](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/static/index.html): the entire UI: recorder loop with voice-activity check, gauge, flags, red takeover, Dadi chat, Evidence Locker, report, document check
+
+## Tests
+
+- [tests/test_offline.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/tests/test_offline.py): unit tests, no network or key (`pytest -q tests`)
+- [scripts/smoke_test.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/scripts/smoke_test.py): one live call per model family with latency
+- [scripts/e2e_test.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/scripts/e2e_test.py): 26 live checks over 8 steps (Hindi scam via Bulbul-generated audio, warning, Dadi evidence, complaint, document, genuine call stays under 40, Tamil scam). `--base` targets any deployment
+- [scripts/browser_test.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/scripts/browser_test.py): Playwright in Chrome with a fake microphone playing a scam call; 19 checks; writes `docs/screenshots/`
+- [scripts/cross_instance_test.py](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/scripts/cross_instance_test.py): sends each step of one call to a different server instance to prove shared state
+- [.github/workflows/ci.yml](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/.github/workflows/ci.yml): gitleaks secret scan, tracked-.env check, ruff, unit tests, optional live E2E
+
+## Rules for AI agents working on this repo
+
+- Never print, log, commit or document the Sarvam API key. It lives only in the gitignored `.env` locally and as a Vercel environment variable.
+- UI: black background, white text only (no grey text). Colour only where it carries meaning: red for danger, green for safe.
+- No em dashes or en dashes in any user-facing text (UI copy, README). Use commas, colons, "·" or plain hyphens. No localhost links in the README.
+- Do not commit or push unless the owner explicitly asks.
+- Changes must keep working both locally (memory store) and on Vercel (Redis store). Never keep call state in a module-level variable.
+- Before claiming something works, run `pytest -q tests`, `ruff check app scripts tests`, `python scripts/e2e_test.py` against a running server, and `python scripts/browser_test.py`.
+- After changing Dadi's voices, pace or filler lines, regenerate the clips with `python scripts/make_fillers.py`.
+
+## Optional
+
+- [samples/scam_script_hinglish.md](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/samples/scam_script_hinglish.md): role-play lines for the demo (digital arrest, escalating)
+- [samples/scam_script_tamil.md](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/samples/scam_script_tamil.md): the same scam in Tamil
+- [samples/safe_call_script.md](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/samples/safe_call_script.md): genuine bank EMI and family calls that must stay green
+- [samples/fake_cbi_warrant.png](https://raw.githubusercontent.com/Athmeeya2006/Sarvam/main/samples/fake_cbi_warrant.png): generated fake warrant (watermarked "SAMPLE · FOR DEMO") for the document check
