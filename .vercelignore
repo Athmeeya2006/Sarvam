@@ -1,0 +1,15 @@
+# Never upload secrets: the key is set as a Vercel environment variable instead.
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.github/
+docs/
+tests/
+scripts/
+samples/*.wav
+*.log

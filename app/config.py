@@ -49,6 +49,9 @@ LANGUAGES = {
 
 def get_api_key(required: bool = True) -> str:
     key = os.getenv("SARVAM_API_KEY", "").strip()
+    if not key and required and os.getenv("VERCEL"):
+        # Serverless: don't kill the function; surface a clear error to the caller instead.
+        raise RuntimeError("SARVAM_API_KEY is not set. Add it in Vercel → Settings → Environment Variables and redeploy.")
     if not key and required:
         sys.stderr.write(
             "\n[kavach] SARVAM_API_KEY is not set.\n"

@@ -10,8 +10,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@500&family=Noto+Sans+Devanagari:wght@400;600;800&family=Noto+Sans+Tamil:wght@400;700&display=swap" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com/3.4.5"></script>
 <style>
-  /* Monochrome by design: black, white, greys. Colour appears ONLY when it means something (red = danger, green = safe). */
-  :root { --bg:#000; --panel:#0a0a0a; --line:#262626; --line2:#3f3f3f; --ink:#fafafa; --mute:#a3a3a3; --dim:#737373; --danger:#ef4444; --safe:#22c55e; --amber:#f59e0b; }
+  /* Monochrome by design: black background, ALL text white. Grey only for borders/graphics. Colour appears ONLY when it means something (red = danger, green = safe). */
+  :root { --bg:#000; --panel:#0a0a0a; --line:#262626; --line2:#3f3f3f; --ink:#fafafa; --mute:#fff; --dim:#fff; --danger:#ef4444; --safe:#22c55e; --amber:#f59e0b; }
   html, body { background:var(--bg); color:var(--ink); font-family:Inter,"Noto Sans Devanagari","Noto Sans Tamil",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
   .mono { font-family:"JetBrains Mono",ui-monospace,monospace; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:18px; }
@@ -20,10 +20,12 @@
   .btn:hover:not(:disabled) { border-color:#fff; background:#141414; }
   .btn-primary { background:#fff; color:#000; border-color:#fff; }
   .btn-primary:hover:not(:disabled) { background:#e5e5e5; color:#000; }
-  button:disabled { opacity:.4; cursor:not-allowed; }
-  .chip { border:1px solid var(--line2); border-radius:999px; font-size:11px; padding:1px 8px; color:var(--mute); }
-  .badge { border:1px solid var(--line); color:var(--dim); transition:all .3s; }
-  .badge.on { border-color:#fff; color:#fff; }
+  button:disabled { cursor:not-allowed; border-style:dashed !important; }
+  ::placeholder { color:#fff; opacity:1; font-style:italic; }
+  select, input, option { color:#fff; }
+  .chip { border:1px solid var(--line2); border-radius:999px; font-size:11px; padding:1px 8px; color:#fff; }
+  .badge { border:1px dashed var(--line2); color:#fff; transition:all .3s; }
+  .badge.on { border:1px solid #fff; color:#fff; }
   .badge.on .tick { display:inline; }
   .pop { animation:pop .45s cubic-bezier(.2,1.4,.4,1) both; }
   @keyframes pop { from { transform:scale(.9) translateY(8px); opacity:0 } to { transform:none; opacity:1 } }
@@ -124,8 +126,8 @@
           <g id="instantTick" class="needle" style="transform:rotate(-90deg)"><line x1="150" y1="24" x2="150" y2="46" stroke="#737373" stroke-width="3" stroke-dasharray="3 3"/></g>
           <g id="needle" class="needle" style="transform:rotate(-90deg)"><line x1="150" y1="150" x2="150" y2="46" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/><circle cx="150" cy="150" r="8" fill="#fff"/></g>
           <text x="150" y="124" text-anchor="middle" font-size="46" font-weight="800" fill="#fff" id="scoreText" font-family="Inter">0</text>
-          <text x="30" y="170" font-size="10" fill="#737373" font-family="Inter">SAFE</text>
-          <text x="270" y="170" font-size="10" fill="#737373" text-anchor="end" font-family="Inter">SCAM</text>
+          <text x="30" y="170" font-size="10" fill="#fff" font-family="Inter">SAFE</text>
+          <text x="270" y="170" font-size="10" fill="#fff" text-anchor="end" font-family="Inter">SCAM</text>
         </svg>
         <div class="flex justify-between text-xs muted mt-1">
           <span>Instant check <b id="instantVal" class="text-white mono">0</b> <span class="dim">(keywords)</span></span>
@@ -244,7 +246,7 @@
     <div class="ring w-24 h-24 rounded-full flex items-center justify-center text-5xl">✋</div>
     <h2 class="text-5xl md:text-7xl font-extrabold mt-5 tracking-tight">CALL KAATIYE</h2>
     <p class="text-2xl md:text-3xl font-bold mt-2" style="color:var(--danger)">कॉल काटिए · HANG UP NOW</p>
-    <p id="warnText" class="text-xl md:text-2xl mt-6 max-w-3xl leading-relaxed text-neutral-200"></p>
+    <p id="warnText" class="text-xl md:text-2xl mt-6 max-w-3xl leading-relaxed text-white"></p>
     <p class="mt-4 muted">Report it: <b class="text-white text-2xl mono">1930</b> · cybercrime.gov.in</p>
     <div class="mt-8 flex flex-wrap gap-3 justify-center items-center">
       <button id="replayBtn" class="btn btn-primary font-bold px-5 py-3">🔊 Replay warning</button>
@@ -301,7 +303,7 @@ $("#dnaSteps").innerHTML = STAGES.map(() => `<div class="step"></div>`).join("")
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function toast(msg, kind = "err") {
   const el = document.createElement("div");
-  el.className = `pop rounded-xl px-4 py-3 text-sm shadow-2xl border ${kind === "err" ? "bg-black border-red-500 text-white" : "bg-black border-neutral-600 text-neutral-200"}`;
+  el.className = `pop rounded-xl px-4 py-3 text-sm shadow-2xl border ${kind === "err" ? "bg-black border-red-500 text-white" : "bg-black border-neutral-600 text-white"}`;
   el.innerHTML = (kind === "err" ? "⚠️ " : "ℹ️ ") + esc(msg);
   $("#toasts").append(el); setTimeout(() => el.remove(), 6500);
 }
@@ -406,7 +408,7 @@ function addTranscript(c, flags) {
   const row = document.createElement("div");
   row.className = "pop flex gap-2 items-start";
   const chip = c.mode === "text" ? `<span class="chip mt-1.5">TEXT</span>` : `<span class="chip mt-1.5 mono">${esc(c.lang || "?")}</span>`;
-  row.innerHTML = `<span class="text-xs dim mt-2 w-10 shrink-0 mono">${c.t}s</span>${chip}<span class="text-neutral-100">${highlight(c.text, flags)}</span>`;
+  row.innerHTML = `<span class="text-xs dim mt-2 w-10 shrink-0 mono">${c.t}s</span>${chip}<span class="text-white">${highlight(c.text, flags)}</span>`;
   $("#transcript").append(row); $("#transcript").scrollTop = 1e9;
 }
 function highlight(text, flags) {
@@ -422,7 +424,7 @@ function renderFlags(flags) {
     const id = "flag-" + f.flag; let el = document.getElementById(id);
     const html = `<div class="text-2xl leading-none mt-0.5">${ICONS[f.flag] || "⚠️"}</div>
       <div class="min-w-0 flex-1"><div class="font-semibold text-white">${esc(f.label_local || "")} <span class="muted font-normal">· ${esc(f.label_en)}</span></div>
-      <div class="text-sm mt-1 text-neutral-300 break-words">“<mark>${esc(f.evidence_quote)}</mark>”</div></div>
+      <div class="text-sm mt-1 text-white break-words">“<mark>${esc(f.evidence_quote)}</mark>”</div></div>
       <span class="chip self-start whitespace-nowrap">${f.source === "ai" ? "AI ✓" : "instant"}</span>`;
     if (!el) { el = document.createElement("div"); el.id = id; el.className = "pop flex gap-3 rounded-xl border border-neutral-800 border-l-2 p-3"; el.style.borderLeftColor = "#ef4444"; $("#flags").prepend(el); }
     el.innerHTML = html;
@@ -608,7 +610,7 @@ function addBubble(who, text, tag) {
   const wrap = document.createElement("div");
   if (who === "scammer") {
     wrap.className = "pop self-end max-w-[85%]";
-    wrap.innerHTML = `<div class="text-[11px] dim text-right mb-1">Scammer</div><div class="rounded-2xl rounded-tr-sm border px-4 py-2.5 text-neutral-100" style="border-color:#7f1d1d;background:#140505">${esc(text)}</div>`;
+    wrap.innerHTML = `<div class="text-[11px] dim text-right mb-1">Scammer</div><div class="rounded-2xl rounded-tr-sm border px-4 py-2.5 text-white" style="border-color:#7f1d1d;background:#140505">${esc(text)}</div>`;
   } else {
     wrap.className = "pop bubble-dadi self-start max-w-[85%] flex gap-2 items-end";
     wrap.innerHTML = `<div class="avatar text-3xl">👵</div><div><div class="text-[11px] dim mb-1">${esc($("#personaName").textContent)} ${tag ? `<span class="chip ml-1">${esc(tag.replace(/_/g, " "))}</span>` : ""}</div>
@@ -701,8 +703,24 @@ const dz = $("#dropZone");
 dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = "#fff"; };
 dz.ondragleave = () => dz.style.borderColor = "";
 dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = ""; const f = e.dataTransfer.files[0]; if (f) checkDoc(f); };
+// Serverless hosts cap request bodies (~4.5 MB on Vercel), so big phone photos are downscaled in the browser.
+const MAX_UPLOAD = 4 * 1024 * 1024;
+async function shrinkImage(file) {
+  if (!file.type.startsWith("image/") || file.size <= MAX_UPLOAD) return file;
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
+  for (const [maxSide, q] of [[2400, .9], [2000, .85], [1600, .8], [1200, .75]]) {
+    const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, "image/jpeg", q));
+    if (blob && blob.size <= MAX_UPLOAD) return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+  }
+  return file;
+}
 async function checkDoc(file) {
   unlockAudio();
+  try { file = await shrinkImage(file); } catch {}
+  if (file.size > MAX_UPLOAD) { toast("That file is over 4 MB. Please upload a photo or a smaller PDF (max 4 MB)."); return; }
   if (file.type.startsWith("image/")) { $("#docPreview").src = URL.createObjectURL(file); $("#docPreview").classList.remove("hidden"); $("#docPh").classList.add("hidden"); }
   $("#docResult").innerHTML = `<div class="space-y-2"><p class="text-white flex items-center gap-2"><span class="wave flex items-center h-5"><span></span><span style="animation-delay:.1s"></span><span style="animation-delay:.2s"></span></span> Sarvam Vision is reading it (extract + digitise), then Sarvam-105B judges it. Usually 10 to 20 s.</p>
     <div class="skeleton h-5 w-2/3"></div><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-5/6"></div></div>`;
@@ -713,16 +731,16 @@ async function checkDoc(file) {
     const fields = Object.entries(r.fields || {}).map(([k, v]) => {
       const c = (r.field_confidence || {})[k]; const low = c != null && c < 0.6;
       const val = v === null || v === "" ? '<span class="dim">not found</span>' : esc(typeof v === "boolean" ? (v ? "yes" : "no") : v);
-      return `<tr class="border-t border-neutral-900"><td class="py-1 pr-3 dim whitespace-nowrap align-top">${esc(k.replace(/_/g, " "))}</td><td class="py-1 text-neutral-200 break-words">${val}</td>
+      return `<tr class="border-t border-neutral-900"><td class="py-1 pr-3 dim whitespace-nowrap align-top">${esc(k.replace(/_/g, " "))}</td><td class="py-1 text-white break-words">${val}</td>
         <td class="py-1 pl-2 mono text-right align-top ${low ? "text-white" : "dim"}">${c == null ? "" : (low ? "⚠ " : "") + Math.round(c * 100) + "%"}</td></tr>`;
     }).join("");
     $("#docResult").innerHTML = `<div class="pop rounded-xl border p-4" style="border-color:${V[2]}">
       <div class="flex justify-between items-center gap-2"><b class="text-xl" style="color:${V[2]}">${V[0]} · ${V[1]}</b>${r.confidence != null ? `<span class="chip">${r.confidence}% sure</span>` : ""}</div>
-      <p class="mt-2 text-neutral-100">${esc(r.spoken_summary)}</p>
+      <p class="mt-2 text-white">${esc(r.spoken_summary)}</p>
       <ul class="mt-3 space-y-2">${(r.reasons || []).map(x => `<li class="text-sm"><b class="text-white">• ${esc(x.reason_local || x.reason_en)}</b><br><span class="muted">${esc(x.reason_en || "")}</span>${x.evidence ? `<br><mark class="text-xs">${esc(String(x.evidence).slice(0, 220))}</mark>` : ""}</li>`).join("")}</ul>
       <div class="mt-3 flex flex-wrap gap-2 items-start">${r.audio_base64 ? `<button id="docReplay" class="btn px-3 py-1.5 text-sm">🔊 Hear verdict</button>` : ""}
         <details class="text-xs w-full"><summary class="cursor-pointer muted hover:text-white py-1">▸ Fields read by Sarvam Vision (with confidence)</summary><table class="w-full mt-1">${fields}</table></details>
-        <details class="text-xs w-full"><summary class="cursor-pointer muted hover:text-white py-1">▸ Full OCR text</summary><pre class="whitespace-pre-wrap mt-1 text-neutral-400">${esc(r.ocr_text)}</pre></details></div></div>`;
+        <details class="text-xs w-full"><summary class="cursor-pointer muted hover:text-white py-1">▸ Full OCR text</summary><pre class="whitespace-pre-wrap mt-1 text-white">${esc(r.ocr_text)}</pre></details></div></div>`;
     if (r.audio_base64) { stopAudio(); playQueued(r.audio_base64); $("#docReplay").onclick = () => { stopAudio(); playQueued(r.audio_base64); }; }
   } catch (e) { $("#docResult").innerHTML = `<p class="text-white">⚠️ ${esc(e.message)}</p>`; toast(e.message); }
 }
@@ -745,7 +763,7 @@ async function endCall() {
       ${r.complaint_en ? `<div class="grid md:grid-cols-2 gap-4 mt-4">
         <div class="rounded-xl border border-neutral-800 p-4">
           <div class="flex justify-between items-center text-xs"><b class="text-white">🚔 Complaint for 1930 / cybercrime.gov.in</b><a class="underline muted hover:text-white" href="https://cybercrime.gov.in" target="_blank" rel="noopener">open portal ↗</a></div>
-          <p class="mt-3 whitespace-pre-wrap text-sm text-neutral-100" id="cEn">${esc(r.complaint_en)}</p>
+          <p class="mt-3 whitespace-pre-wrap text-sm text-white" id="cEn">${esc(r.complaint_en)}</p>
           <p class="mt-3 whitespace-pre-wrap text-sm muted" id="cLoc">${esc(r.complaint_local)}</p>
           <div class="mt-3 flex flex-wrap gap-2"><button class="copy btn btn-primary px-3 py-1.5 text-sm font-semibold" data-t="cEn">📋 Copy English</button>
             <button class="copy btn px-3 py-1.5 text-sm" data-t="cLoc">📋 Copy ${esc(LANGS[$("#lang").value].split(" · ")[0])}</button>
@@ -754,7 +772,7 @@ async function endCall() {
         <div class="flex flex-col gap-4">
           <div class="rounded-xl border border-neutral-800 p-4">
             <div class="flex justify-between items-center text-xs gap-2"><b class="text-white">💬 Family alert to Pappu (grandson)</b><span class="chip">SIMULATED · would send via WhatsApp/SMS in production</span></div>
-            <p class="mt-3 whitespace-pre-wrap text-neutral-100">${esc(r.family_alert_local)}</p>
+            <p class="mt-3 whitespace-pre-wrap text-white">${esc(r.family_alert_local)}</p>
             <p class="mt-2 text-sm muted whitespace-pre-wrap">${esc(r.family_alert_en)}</p>
             <button class="mt-3 btn px-3 py-1.5 text-sm" onclick="this.textContent='✓ Sent (simulated)';this.disabled=true">📲 Send alert</button>
           </div>
@@ -774,6 +792,7 @@ setGauge(null, 0); placeThreshold();
 api("/api/health").then(h => {
   S.chunkMs = (h.chunk_seconds || 6) * 1000; S.threshold = h.threshold || 70; placeThreshold();
   if (!h.key_loaded) toast("SARVAM_API_KEY is missing on the server. Copy .env.example to .env and add your key.");
+  if (h.serverless && h.store === "memory") toast("Deployed without Upstash Redis: calls may lose their session. Connect Upstash in Vercel → Storage, then redeploy.");
 }).catch(e => toast(e.message));
 </script>
 </body>

@@ -37,18 +37,19 @@ Plus: **📄 Check a document**. Upload the fake "CBI arrest warrant" the scamme
 2. [The solution](#2-the-solution)
 3. [Sarvam models used](#3-sarvam-models-used)
 4. [Architecture](#4-architecture)
-5. [🚀 Quick start (5 minutes)](#5--quick-start-5-minutes)
-6. [📖 How to use it](#6--how-to-use-it)
-7. [🎬 90-second demo script](#7--90-second-demo-script)
-8. [Configuration](#8-configuration)
-9. [API reference](#9-api-reference)
-10. [Prompt and safety design](#10-prompt-and-safety-design)
-11. [Testing and results](#11-testing-and-results)
-12. [🛠️ Troubleshooting](#12-️-troubleshooting)
-13. [Privacy and ethics](#13-privacy-and-ethics)
-14. [Project structure](#14-project-structure)
-15. [Roadmap](#15-roadmap)
-16. [Impact, team and credits](#16-impact-team-and-credits)
+5. [🚀 Quick start: run it on your computer (5 minutes)](#5--quick-start-run-it-on-your-computer-5-minutes)
+6. [☁️ Deploy to Vercel](#6-️-deploy-to-vercel)
+7. [📖 How to use it](#7--how-to-use-it)
+8. [🎬 90-second demo script](#8--90-second-demo-script)
+9. [Configuration](#9-configuration)
+10. [API reference](#10-api-reference)
+11. [Prompt and safety design](#11-prompt-and-safety-design)
+12. [Testing and results](#12-testing-and-results)
+13. [🛠️ Troubleshooting](#13-️-troubleshooting)
+14. [Privacy and ethics](#14-privacy-and-ethics)
+15. [Project structure](#15-project-structure)
+16. [Roadmap](#16-roadmap)
+17. [Impact, team and credits](#17-impact-team-and-credits)
 
 ---
 
@@ -164,7 +165,7 @@ sequenceDiagram
 * **AI analysis** (Sarvam-105B): looks at the last ~60 s of transcript. At most one call is in flight per session; if one is busy the chunk is skipped (debounce). Flags whose quote cannot be found in the transcript are dropped server-side (`verify_evidence`).
 * **Warning**: auto-plays once the AI score is 70 or more. The server enforces a 20 s cooldown.
 
-## 5. 🚀 Quick start (5 minutes)
+## 5. 🚀 Quick start: run it on your computer (5 minutes)
 
 **Prerequisites**
 
@@ -227,17 +228,60 @@ ALL OK
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
-Open **http://localhost:8000** and allow the microphone when asked.
-> ⚠️ Use `localhost`, not your LAN IP. Browsers only allow the microphone on `localhost` or HTTPS.
+Open the address uvicorn prints (port 8000 on this computer) and allow the microphone when asked.
+> ⚠️ Browsers only allow the microphone over HTTPS or on the same computer that runs the server. Opening it from another device by its LAN IP over plain HTTP blocks the mic, so use the deployed HTTPS link for other devices.
 
 **7. (Optional) Run the full end-to-end test** in a second terminal, with the server running:
 
 ```bash
-python scripts/e2e_test.py
+python scripts/e2e_test.py                                   # tests the local server
+python scripts/e2e_test.py --base https://<your-app>.vercel.app   # tests the deployed app
 ```
-Expected: `26/26 checks passed` (see [Testing](#11-testing-and-results)).
+Expected: `26/26 checks passed` (see [Testing](#12-testing-and-results)).
 
-## 6. 📖 How to use it
+## 6. ☁️ Deploy to Vercel
+
+Kavach runs on Vercel as a single Python function (`app/main.py` is detected automatically) with static files served from Vercel's CDN. Because serverless instances do not share memory, **calls are stored in Upstash Redis** when it is connected. Without it, Kavach keeps calls in memory, which is right for running it on your own computer.
+
+**1. Push the repo to GitHub** (`.env` is gitignored and `.vercelignore` also excludes it, so your key is never uploaded).
+
+**2. Import it into Vercel**
+* [vercel.com/new](https://vercel.com/new), then choose this repository. The framework preset is detected as **FastAPI**; leave the build settings as they are.
+
+**3. Add your Sarvam key**
+* Project → **Settings → Environment Variables**, then add `SARVAM_API_KEY` with your key for Production, Preview and Development.
+
+**4. Connect Upstash Redis (free) for the shared session store**
+* Project → **Storage** (or **Marketplace**), choose **Upstash → Redis**, create a database and connect it to the project.
+* Vercel adds `KV_REST_API_URL` and `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`) automatically. Kavach picks up either pair.
+
+**5. Deploy** (or redeploy, so the new variables apply)
+* From the dashboard: **Deployments → Redeploy**. Or from the CLI:
+```bash
+npm i -g vercel
+vercel login
+vercel link          # once, inside the repo
+vercel --prod
+```
+
+**6. Check it.** Open `https://<your-app>.vercel.app/api/health`. You should see `"key_loaded": true`, `"store": "upstash-redis"` and `"serverless": true`. Then run the full test against it:
+```bash
+python scripts/e2e_test.py --base https://<your-app>.vercel.app
+```
+
+**What is already handled for Vercel**
+
+| Serverless constraint | How Kavach handles it |
+|---|---|
+| Instances do not share memory | Sessions are stored in Upstash Redis as a hash. Each request writes back only the fields it changed, under short Redis locks, so a chunk, a warning and a Dadi turn on the same call never overwrite each other. |
+| Cold starts | Dadi's filler clips ship pre-generated in `static/fillers/` (made by `scripts/make_fillers.py`), so no Bulbul call is needed before Dadi can answer. |
+| 4.5 MB request limit | Large photos are downscaled in the browser before upload; audio chunks are ~100 KB. |
+| Function time limit | `vercel.json` sets `maxDuration: 60`. The longest step, the document check, takes ~15 to 20 s. |
+| HTTPS for the microphone | Vercel serves HTTPS, so the microphone works on phones and laptops. |
+
+> Tested locally with exactly this setup: Redis plus Upstash's REST API (`hiett/serverless-redis-http`) and **3 separate server processes that share no memory**, so consecutive requests of one call land on different instances. See [Testing](#12-testing-and-results).
+
+## 7. 📖 How to use it
 
 | Step | What to do | What you see |
 |---|---|---|
@@ -259,9 +303,9 @@ Expected: `26/26 checks passed` (see [Testing](#11-testing-and-results)).
 | <img src="docs/screenshots/03_detect.png" alt="Detection view" /> | <img src="docs/screenshots/04_dadi_mode.png" alt="Dadi Mode" /> |
 | <img src="docs/screenshots/05_report.png" alt="Call report" /> | <img src="docs/screenshots/06_document.png" alt="Document check" /> |
 
-## 7. 🎬 90-second demo script
+## 8. 🎬 90-second demo script
 
-**Setup:** the server is running, http://localhost:8000 is open in Chrome, the language is set to हिन्दी, the volume is up, and a teammate ("the scammer") is next to the laptop.
+**Setup:** Kavach is open in Chrome (your deployed link, or the local server on this laptop), the language is set to हिन्दी, the volume is up, and a teammate ("the scammer") is next to the laptop.
 
 | Time | Teammate says (from [`samples/scam_script_hinglish.md`](samples/scam_script_hinglish.md)) | You click | Judges see |
 |---|---|---|---|
@@ -279,7 +323,7 @@ Expected: `26/26 checks passed` (see [Testing](#11-testing-and-results)).
 
 **Backup:** if the room is too loud, tick ⌨️ Text mode and use the ▶ buttons. It is the same pipeline, labelled "TEXT".
 
-## 8. Configuration
+## 9. Configuration
 
 All settings live in [`app/config.py`](app/config.py); most can be overridden in `.env`.
 
@@ -296,8 +340,9 @@ All settings live in [`app/config.py`](app/config.py); most can be overridden in
 | `KAVACH_DADI_PACE` | `0.8` | Dadi's speaking pace (0.5 to 2.0) |
 | `KAVACH_REAL_DATA_BLOCKLIST` | *(empty)* | Comma-separated real numbers (e.g. your own phone) that Dadi must never say |
 | `LANGUAGES` | 7 languages | UI and warning languages, with a voice for each |
+| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` (or `KV_REST_API_URL` + `KV_REST_API_TOKEN`) | *(unset = memory)* | Shared session store for serverless hosts (Vercel). Set automatically by the Vercel Upstash integration. |
 
-## 9. API reference
+## 10. API reference
 
 All responses are JSON. Latencies are reported in `latencies_ms`.
 
@@ -358,7 +403,7 @@ All responses are JSON. Latencies are reported in `latencies_ms`.
 ```
 </details>
 
-## 10. Prompt and safety design
+## 11. Prompt and safety design
 
 All prompts are in [`app/prompts.py`](app/prompts.py). Every LLM call uses a strict **JSON schema**, falling back to `json_object`, then to "Return valid JSON only." (`app/sarvam_client.py`).
 
@@ -374,7 +419,7 @@ All prompts are in [`app/prompts.py`](app/prompts.py). Every LLM call uses a str
 * **Half-duplex anti-echo.** The microphone pauses whenever Kavach speaks (warning, Dadi, filler, verdict) and resumes 300 ms after the audio ends. A chunk that overlaps Kavach's own speech is discarded, and in Dadi Mode silent chunks (measured by a Web Audio level meter) are never sent.
 * **Document verdicts.** Sarvam Vision `extract` (fields plus confidence) and `digitise` (full OCR) run in parallel. A hard rule says that any "official" notice demanding a payment is `likely_fake`.
 
-## 11. Testing and results
+## 12. Testing and results
 
 | Test | Command | What it proves |
 |---|---|---|
@@ -416,32 +461,34 @@ All prompts are in [`app/prompts.py`](app/prompts.py). Every LLM call uses a str
 * The family alert is **simulated**, and the complaint is copy-paste (there is no public 1930 API).
 * Dadi's voice was chosen from Bulbul v3 female voices by configuration, not by a listening panel. Change `DADI_VOICES` to taste.
 
-## 12. 🛠️ Troubleshooting
+## 13. 🛠️ Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| **"Mic blocked"** | Click the 🔒 icon in the address bar, set Microphone to Allow, and reload. Use **http://localhost:8000** (not 127.0.0.1 or a LAN IP over HTTP). |
+| **"Mic blocked"** | Click the 🔒 icon in the address bar, set Microphone to Allow, and reload. Open Kavach over HTTPS (the deployed link) or on the computer running the server, never by LAN IP over plain HTTP. |
 | **No sound / autoplay blocked** | Click anywhere on the page once (browsers need a user gesture), then press 🔊 Replay. Check the system volume and output device. |
 | **401 / 403, "Sarvam rejected the API key"** | Check `SARVAM_API_KEY` in `.env` (no quotes or spaces), then restart uvicorn. |
 | **Server exits: "SARVAM_API_KEY is not set"** | `cp .env.example .env` and paste the key. |
 | **Safari** | Supported. Safari records `audio/mp4` and Kavach sends `input_audio_codec="mp4"` automatically. Chrome or Edge give the smoothest demo. |
 | **Document check is slow** | Sarvam Vision Doc AI is job-based (submit, poll, fetch); expect 10 to 20 s. A skeleton loader shows progress. |
 | **Dadi hears herself / loops** | Move the laptop speaker away from the mic, lower the volume, or use earphones for the phone. Mic pausing is automatic. |
-| **Port 8000 already in use** | `uvicorn app.main:app --port 8001` and open http://localhost:8001, or free the port (`lsof -i :8000`, or on Linux `fuser -k 8000/tcp`). |
+| **Port 8000 already in use** | Start on another port with `uvicorn app.main:app --port 8001`, or free port 8000 (`lsof -i :8000`, or on Linux `fuser -k 8000/tcp`). |
 | **Nothing is transcribed** | Speak closer to the mic. Chunks under ~1.5 KB count as silence. Or use ⌨️ Text mode. |
 | **429 rate limit** | Wait a few seconds; the UI shows a toast and keeps the last result. |
+| **Vercel: "Session not found" in the middle of a call** | Upstash Redis is not connected. Check that `/api/health` shows `"store": "upstash-redis"`; if it says `memory`, connect Upstash (step 4 of [Deploy](#6-️-deploy-to-vercel)) and redeploy. |
+| **Vercel: health says `key_loaded: false`** | Add `SARVAM_API_KEY` under Settings → Environment Variables, then redeploy. |
 
-## 13. Privacy and ethics
+## 14. Privacy and ethics
 
 * **User-activated only.** Kavach listens only after you tap *Protect this call*, on your own device, for your own calls. It is not a wiretap and never runs in the background.
 * **No audio is stored.** Chunks are streamed to Saaras for transcription and discarded.
-* **Transcripts and evidence live in memory** and are **deleted when the call ends** (`/end` removes the session; the E2E test checks this). Idle sessions expire after an hour.
+* **Transcripts and evidence** live in server memory (or, on Vercel, in your own Upstash Redis database) and are **deleted when the call ends** (`/end` removes the session; the E2E test checks this). Anything left idle expires automatically after an hour.
 * **The API key never leaves the server.** It is read from `.env` (gitignored), never logged, and never returned by `/api/health`. CI runs gitleaks plus a key-pattern check on every push.
 * **Dadi is defensive deception against criminals only**, with a fictional identity, no real data (enforced in code), no threats or abuse, and no payments. The evidence she collects is meant for **official reporting (1930 / cybercrime.gov.in)** only.
 * **False positives:** the takeover needs the *AI* score (which must quote evidence), never keywords alone. The user can always dismiss it, and the genuine-call test is part of CI.
 * Kavach never generates scam scripts; the only role-play lines are the demo files in `samples/`.
 
-## 14. Project structure
+## 15. Project structure
 
 ```
 kavach/
@@ -452,19 +499,22 @@ kavach/
 │   ├── evidence.py        # Evidence Locker: regex (UPI/phone/IFSC/account, spoken digits) + dedupe
 │   ├── dadi.py            # Dadi persona, filler clips, number scrubber
 │   ├── prompts.py         # every prompt and JSON schema
+│   ├── store.py           # session store: memory (local) or Upstash Redis (Vercel), with cross-instance locks
 │   └── config.py          # models, voices, thresholds, languages
 ├── static/index.html      # the whole UI (Tailwind CDN + vanilla JS)
+├── static/fillers/        # pre-generated Dadi filler clips (scripts/make_fillers.py)
 ├── samples/               # fake_cbi_warrant.png, scam scripts (Hinglish, Tamil), genuine call script
-├── scripts/               # smoke_test, e2e_test, browser_test, eval_calls, make_fake_warrant
+├── scripts/               # smoke_test, e2e_test, browser_test, eval_calls, make_fake_warrant, make_fillers
 ├── tests/test_offline.py  # unit tests (no key needed)
 ├── docs/screenshots/      # generated by scripts/browser_test.py
 ├── .github/workflows/ci.yml   # gitleaks + lint + tests (+ optional live E2E)
+├── vercel.json  .vercelignore  .python-version   # Vercel deployment
 ├── .env.example  .gitignore  requirements.txt  requirements-dev.txt  NOTES.md
 ```
 
 `NOTES.md` has the verified Sarvam API notes (endpoints, model IDs, limits and gotchas, such as Doc AI refusing `format="md"`).
 
-## 15. Roadmap
+## 16. Roadmap
 
 * **Android call-screening integration**: protect real calls without a laptop
 * **Feature-phone IVR version**: conference-in "Kavach" on any phone, no smartphone needed
@@ -474,7 +524,7 @@ kavach/
 * **UPI hook**: pause or confirm transfers while a call is flagged
 * **WebSocket streaming STT** (`saaras:v3-realtime`): sub-second detection instead of ~6 s chunks
 
-## 16. Impact, team and credits
+## 17. Impact, team and credits
 
 **Impact.** Every digital-arrest victim we warn keeps their savings. Every minute Dadi wastes is a minute a scammer is not calling someone's grandparent. Every UPI ID she collects is a lead for the police.
 

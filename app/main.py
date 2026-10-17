@@ -1,13 +1,14 @@
-"""Kavach API. Run:  uvicorn app.main:app --reload --port 8000   ->  http://localhost:8000"""
+"""Kavach API. Run locally with uvicorn (see README) or deploy to Vercel (app/main.py is the entrypoint)."""
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -16,25 +17,28 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, dadi, evidence, prompts, risk
+from . import config, dadi, evidence, prompts, risk, store
 from . import sarvam_client as sc
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("kavach")
 
-config.get_api_key()  # fail fast with a helpful message if the key is missing
+if not os.getenv("VERCEL"):
+    config.get_api_key()  # local: fail fast with a helpful message if the key is missing
 
 MAX_AUDIO_BYTES = 3 * 1024 * 1024
 WARN_COOLDOWN_S = 20
-SESSION_TTL_S = 60 * 60
 POOL = ThreadPoolExecutor(max_workers=8)
+STORE = store.make_store()
+log.info("session store: %s", STORE.kind)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Pre-generate Dadi filler clips (hi-IN, ta-IN) in the background so the first Dadi turn is instant.
-    threading.Thread(target=dadi.warm_fillers, daemon=True).start()
+    # Dadi filler clips ship pre-generated in static/fillers/. If they are missing, warm them in the background.
+    if not dadi.fillers_on_disk():
+        threading.Thread(target=dadi.warm_fillers, daemon=True).start()
     yield
 
 
@@ -55,7 +59,6 @@ class Session:
     flags: dict[str, dict] = field(default_factory=dict)
     last_warn: float = 0
     warn_cache: dict[str, str] = field(default_factory=dict)
-    llm_lock: threading.Lock = field(default_factory=threading.Lock)
     # Dadi Mode
     dadi_on: bool = False
     dadi_started: float = 0
@@ -64,7 +67,10 @@ class Session:
     locker: evidence.Locker = field(default_factory=evidence.Locker)
     scam_dna: dict = field(default_factory=lambda: {"playbook": "unclear", "stage": "hook"})
     last_scammer_lang: str | None = None
-    dadi_lock: threading.Lock = field(default_factory=threading.Lock)
+
+    FIELDS = ("language", "started", "chunks", "ai_result", "ai_for_chars", "peak_score", "flags", "last_warn",
+              "warn_cache", "dadi_on", "dadi_started", "dadi_lang", "history", "locker", "scam_dna",
+              "last_scammer_lang")
 
     @property
     def transcript(self) -> str:
@@ -74,21 +80,52 @@ class Session:
     def time_wasted_s(self) -> int:
         return int(time.time() - self.dadi_started) if self.dadi_started else 0
 
+    def dump(self, *names: str) -> dict:
+        return {n: (self.locker.items if n == "locker" else getattr(self, n)) for n in (names or self.FIELDS)}
 
-SESSIONS: dict[str, Session] = {}
+    @classmethod
+    def from_dict(cls, sid: str, d: dict) -> Session:
+        s = cls(id=sid)
+        for n in cls.FIELDS:
+            if n in d:
+                setattr(s, n, evidence.Locker.from_items(d[n]) if n == "locker" else d[n])
+        return s
 
 
+# Sessions live in STORE (memory locally, Upstash Redis on Vercel), never in a module-level dict, so any
+# serverless instance can serve any request of a call.
 def _get(sid: str) -> Session:
-    s = SESSIONS.get(sid)
-    if not s:
+    d = STORE.get(sid)
+    if not d:
         raise HTTPException(404, "Session not found or already ended. Start a new one.")
-    return s
+    return Session.from_dict(sid, d)
 
 
-def _gc():
-    now = time.time()
-    for k in [k for k, v in SESSIONS.items() if now - v.started > SESSION_TTL_S]:
-        SESSIONS.pop(k, None)
+def _save(s: Session, *names: str) -> None:
+    STORE.update(s.id, s.dump(*names))
+
+
+@contextmanager
+def _locked(name: str, ttl_s: float = 15, wait_s: float = 30):
+    """Cross-instance mutex (Redis SET NX in serverless, a dict locally)."""
+    deadline = time.time() + wait_s
+    while not (token := STORE.lock(name, ttl_s)):
+        if time.time() > deadline:
+            raise HTTPException(409, "Kavach is busy with this call, please retry")
+        time.sleep(0.05)
+    try:
+        yield
+    finally:
+        STORE.unlock(name, token)
+
+
+def _mutate(sid: str, fn, *names: str):
+    """Load -> change -> save only the changed fields, under a short per-session write lock."""
+    with _locked(f"w:{sid}"):
+        s = _get(sid)
+        result = fn(s)
+        _save(s, *names)
+        return s, result
 
 
 def _lang(code: str | None) -> str:
@@ -110,50 +147,62 @@ async def _stt(audio: UploadFile, mime: str | None) -> dict:
 
 
 # ------------------------------------------------------------------ Act 1: detect
-def _analyse(s: Session) -> tuple[dict | None, int | None, bool]:
-    """Sarvam-105B on the last ~60 s of transcript. Debounced: at most one call in flight per session."""
-    text = s.transcript
-    if len(text) < 15 or len(text) == s.ai_for_chars:
+def _analyse(sid: str, text: str, language: str) -> tuple[dict | None, int | None, bool]:
+    """Sarvam-105B on the last ~60 s of transcript. Debounced: at most one call in flight per session
+    (a store lock, so this holds across serverless instances too)."""
+    if len(text) < 15:
         return None, None, False
-    if not s.llm_lock.acquire(blocking=False):
+    token = STORE.lock(f"llm:{sid}", 60)
+    if not token:
         return None, None, True
     try:
         window = text[-config.TRANSCRIPT_WINDOW_CHARS:]
-        lang = config.LANGUAGES[s.language]
-        raw, ms = sc.chat_json(prompts.RISK_SYSTEM.format(lang_name=lang["english"], lang_code=s.language),
+        lang = config.LANGUAGES[language]
+        raw, ms = sc.chat_json(prompts.RISK_SYSTEM.format(lang_name=lang["english"], lang_code=language),
                                prompts.risk_user(window), schema=prompts.RISK_SCHEMA)
         result = risk.normalise_ai(raw)
         result["explanation_en"] = raw.get("explanation_en", "")
         result["red_flags"] = risk.verify_evidence(result["red_flags"], window)
-        s.ai_result, s.ai_for_chars = result, len(text)
-        s.peak_score = max(s.peak_score, result["risk_score"])
-        if result["warning_text"]:
-            s.warn_cache = {s.language: result["warning_text"]}
-        for f in result["red_flags"]:
-            s.flags[f["flag"]] = f
+
+        def apply(s: Session):
+            if len(text) >= s.ai_for_chars:  # never replace a newer analysis with an older one
+                s.ai_result, s.ai_for_chars = result, len(text)
+                if result["warning_text"]:
+                    s.warn_cache = {language: result["warning_text"]}
+            s.peak_score = max(s.peak_score, result["risk_score"])
+            for f in result["red_flags"]:
+                s.flags[f["flag"]] = f
+
+        _mutate(sid, apply, "ai_result", "ai_for_chars", "warn_cache", "peak_score", "flags")
         return result, ms, False
     finally:
-        s.llm_lock.release()
+        STORE.unlock(f"llm:{sid}", token)
 
 
-def _ingest_text(s: Session, text: str, detected: str | None, stt_ms: int | None, mode: str) -> dict:
+def _ingest_text(sid: str, text: str, detected: str | None, stt_ms: int | None, mode: str) -> dict:
     latencies = {"saaras": stt_ms} if stt_ms is not None else {}
-    chunk = {"text": text, "lang": detected, "t": round(time.time() - s.started, 1), "mode": mode}
-    s.chunks.append(chunk)
-    if detected:
-        s.last_scammer_lang = detected
 
-    inst = risk.instant_score(s.transcript[-config.TRANSCRIPT_WINDOW_CHARS:])
-    for f in inst["flags"]:
-        s.flags.setdefault(f["flag"], f)  # never overwrite an AI-verified flag
+    def append(s: Session):
+        chunk = {"text": text, "lang": detected, "t": round(time.time() - s.started, 1), "mode": mode}
+        s.chunks.append(chunk)
+        if detected:
+            s.last_scammer_lang = detected
+        inst = risk.instant_score(s.transcript[-config.TRANSCRIPT_WINDOW_CHARS:])
+        for f in inst["flags"]:
+            s.flags.setdefault(f["flag"], f)  # never overwrite an AI-verified flag
+        return chunk, inst
+
+    s, (chunk, inst) = _mutate(sid, append, "chunks", "last_scammer_lang", "flags")
 
     ai_error, ai, skipped = None, None, False
     try:
-        ai, ms, skipped = _analyse(s)
+        ai, ms, skipped = _analyse(sid, s.transcript, s.language)
         if ms is not None:
             latencies["sarvam-105b"] = ms
     except sc.SarvamError as e:
         ai_error = str(e)
+    if ai is not None:
+        s = _get(sid)  # pick up the merged AI result
 
     return {
         "chunk_text": text,
@@ -173,10 +222,10 @@ def _ingest_text(s: Session, text: str, detected: str | None, stt_ms: int | None
 
 
 # ------------------------------------------------------------------ Act 3: Dadi
-def _dadi_turn(s: Session, scammer_text: str, detected: str | None, stt_ms: int | None, mode: str) -> dict:
-    if not s.dadi_lock.acquire(timeout=30):
-        raise HTTPException(409, "Dadi is still answering the previous line")
-    try:
+def _dadi_turn(sid: str, scammer_text: str, detected: str | None, stt_ms: int | None, mode: str) -> dict:
+    # One Dadi turn at a time per call, across all instances. Reload inside the lock to see the latest history.
+    with _locked(f"dadi:{sid}", ttl_s=90, wait_s=60):
+        s = _get(sid)
         latencies = {"saaras": stt_ms} if stt_ms is not None else {}
         t = time.time() - s.dadi_started
         s.chunks.append({"text": scammer_text, "lang": detected, "t": round(time.time() - s.started, 1),
@@ -223,6 +272,15 @@ def _dadi_turn(s: Session, scammer_text: str, detected: str | None, stt_ms: int 
             log.warning("dadi tts failed: %s", e)
 
         s.history += [{"role": "scammer", "text": scammer_text}, {"role": "dadi", "text": out["reply_text"]}]
+        new_chunks = s.chunks[-1:]
+        merged_locker = s.locker
+
+        def save(cur: Session):
+            cur.chunks += new_chunks
+            cur.dadi_lang, cur.history, cur.scam_dna = s.dadi_lang, s.history, s.scam_dna
+            cur.locker = merged_locker
+
+        _mutate(sid, save, "chunks", "dadi_lang", "history", "scam_dna", "locker")
         return {
             "scammer_text": scammer_text,
             "detected_lang": detected,
@@ -237,8 +295,6 @@ def _dadi_turn(s: Session, scammer_text: str, detected: str | None, stt_ms: int 
             "scam_dna": s.scam_dna,
             "latencies_ms": latencies,
         }
-    finally:
-        s.dadi_lock.release()
 
 
 # ------------------------------------------------------------------ routes
@@ -266,6 +322,7 @@ def index():
 @app.get("/api/health")
 def health():
     return {"ok": True, "key_loaded": bool(config.get_api_key(required=False)),
+            "store": STORE.kind, "serverless": bool(os.getenv("VERCEL")),
             "models": {"stt": config.STT_MODEL, "stt_fallback": config.STT_FALLBACK_MODEL, "llm": config.LLM_MODEL,
                        "tts": config.TTS_MODEL, "vision": "sarvam-vision (doc_ai extract + digitise)"},
             "chunk_seconds": config.CHUNK_SECONDS, "threshold": config.RISK_THRESHOLD,
@@ -274,17 +331,20 @@ def health():
 
 @app.post("/api/session/start")
 def start(body: StartBody | None = None):
-    _gc()
     lang = _lang((body and (body.user_lang or body.language)) or "hi-IN")
     s = Session(id=uuid.uuid4().hex[:12], language=lang, dadi_lang=dadi.persona_lang(lang))
-    SESSIONS[s.id] = s
+    _save(s)
     return {"session_id": s.id, "language": s.language, "threshold": config.RISK_THRESHOLD}
 
 
 @app.post("/api/session/{sid}/language")
 def set_language(sid: str, body: LangBody):
-    s = _get(sid)
-    s.language = _lang(body.language or s.language)
+    lang = _lang(body.language) if body.language else None
+
+    def apply(s: Session):
+        s.language = lang or s.language
+
+    s, _ = _mutate(sid, apply, "language")
     return {"language": s.language}
 
 
@@ -296,7 +356,7 @@ async def chunk(sid: str, audio: UploadFile = File(...), mime: str | None = Form
         return {"skipped": "no_speech", "full_transcript": s.transcript, "ai_result": s.ai_result,
                 "instant_score": None, "peak_score": s.peak_score, "flags": list(s.flags.values()),
                 "latencies_ms": {"saaras": stt["ms"]} if stt["ms"] else {}}
-    return await asyncio.to_thread(_ingest_text, s, stt["transcript"], stt["language_code"], stt["ms"], "audio")
+    return await asyncio.to_thread(_ingest_text, sid, stt["transcript"], stt["language_code"], stt["ms"], "audio")
 
 
 @app.post("/api/demo/text")
@@ -309,8 +369,8 @@ async def demo_text(body: TextBody):
     if body.dadi:
         if not s.dadi_on:
             raise HTTPException(400, "Dadi Mode is not active. Call /dadi/start first.")
-        return await asyncio.to_thread(_dadi_turn, s, text, body.lang, None, "text")
-    return await asyncio.to_thread(_ingest_text, s, text, body.lang, None, "text")
+        return await asyncio.to_thread(_dadi_turn, s.id, text, body.lang, None, "text")
+    return await asyncio.to_thread(_ingest_text, s.id, text, body.lang, None, "text")
 
 
 @app.post("/api/session/{sid}/warn")
@@ -332,12 +392,13 @@ def warn(sid: str, body: LangBody | None = None, force: bool = False):
         if not text:
             raise HTTPException(502, "Could not generate a warning")
         s.warn_cache[lang] = text
+        _mutate(sid, lambda cur: cur.warn_cache.update({lang: text}), "warn_cache")
     try:
         audio, ms = sc.speak(text, lang, pace=config.WARN_PACE)
     except sc.SarvamError as e:
         raise HTTPException(502, str(e)) from e
     latencies["bulbul"] = ms
-    s.last_warn = now
+    _mutate(sid, lambda cur: setattr(cur, "last_warn", now), "last_warn")
     return {"warning_text": text, "language": lang, "audio_base64": audio, "mime": "audio/wav",
             "latencies_ms": latencies}
 
@@ -350,17 +411,19 @@ async def get_fillers(lang: str = "hi-IN"):
 
 @app.post("/api/session/{sid}/dadi/start")
 async def dadi_start(sid: str):
-    s = _get(sid)
-    lang = dadi.persona_lang(s.last_scammer_lang or s.language)
-    s.dadi_on, s.dadi_lang = True, lang
-    if not s.dadi_started:
-        s.dadi_started = time.time()
+    def apply(s: Session):
+        s.dadi_on, s.dadi_lang = True, dadi.persona_lang(s.last_scammer_lang or s.language)
+        if not s.dadi_started:
+            s.dadi_started = time.time()
+
+    s, _ = _mutate(sid, apply, "dadi_on", "dadi_lang", "dadi_started")
+    lang = s.dadi_lang
     p = prompts.PERSONAS[lang]
     try:
         audio, ms = await asyncio.to_thread(sc.speak, p["opening"], lang, dadi.voice(lang), config.DADI_PACE)
     except sc.SarvamError as e:
         raise HTTPException(502, str(e)) from e
-    s.history.append({"role": "dadi", "text": p["opening"]})
+    _mutate(sid, lambda cur: cur.history.append({"role": "dadi", "text": p["opening"]}), "history")
     return {"persona": p["name"], "dadi_text": p["opening"], "dadi_lang": lang, "dadi_audio_b64": audio,
             "time_wasted_s": s.time_wasted_s, "latencies_ms": {"bulbul": ms}}
 
@@ -374,7 +437,7 @@ async def dadi_turn(sid: str, audio: UploadFile = File(...), mime: str | None = 
     if not stt["transcript"]:
         return {"skipped": "no_speech", "evidence_locker": s.locker.items, "time_wasted_s": s.time_wasted_s,
                 "scam_dna": s.scam_dna, "latencies_ms": {"saaras": stt["ms"]} if stt["ms"] else {}}
-    return await asyncio.to_thread(_dadi_turn, s, stt["transcript"], stt["language_code"], stt["ms"], "audio")
+    return await asyncio.to_thread(_dadi_turn, sid, stt["transcript"], stt["language_code"], stt["ms"], "audio")
 
 
 @app.post("/api/verify-document")
@@ -469,6 +532,6 @@ def end(sid: str):
                     f"- {i['kind'].replace('_', ' ')}: {i['value']}" for i in missing)
         except sc.SarvamError as e:
             out["error"] = str(e)
-    # Privacy: transcripts and evidence are deleted from memory when the call ends.
-    SESSIONS.pop(sid, None)
+    # Privacy: transcripts and evidence are deleted from the store when the call ends.
+    STORE.delete(sid)
     return out

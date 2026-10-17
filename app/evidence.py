@@ -70,6 +70,15 @@ class Locker:
         self.items: list[dict] = []
         self._seen: set[tuple[str, str]] = set()
 
+    @classmethod
+    def from_items(cls, items: list[dict] | None) -> Locker:
+        """Rebuild a locker loaded from the session store."""
+        lk = cls()
+        for it in items or []:
+            lk.items.append(it)
+            lk._seen.add((it.get("kind", "other"), re.sub(r"[\s\-]", "", str(it.get("value", "")).lower())))
+        return lk
+
     def add(self, items: list[dict], t: float) -> list[dict]:
         new = []
         for it in items:
