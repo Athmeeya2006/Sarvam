@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: "Run the live E2E test against the real Sarvam APIs (needs the SARVAM_API_KEY repo secret)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Make sure no .env file is tracked
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$'; then echo "::error::.env is tracked! Remove it and rotate the key."; exit 1; fi
+          if git grep -nE 'sk_[A-Za-z0-9]{6,}_[A-Za-z0-9]{10,}' -- . ':!*.md'; then echo "::error::Something that looks like a Sarvam key is committed."; exit 1; fi
+          echo "No secrets found."
+
+  lint-test:
+    name: Lint + offline tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt pytest ruff
+      - run: ruff check app scripts tests
+      - run: pytest -q tests
+      - name: App imports and fails fast without a key
+        run: |
+          python -c "import app.risk, app.evidence, app.dadi, app.prompts; print('imports ok')"
+          if SARVAM_API_KEY= python -c "import app.main" 2>/dev/null; then echo "::error::server should refuse to start without a key"; exit 1; fi
+          echo "fails fast without a key: ok"
+
+  e2e:
+    name: Live E2E (real Sarvam APIs)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_e2e
+    needs: [secret-scan, lint-test]
+    runs-on: ubuntu-latest
+    env:
+      SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python scripts/smoke_test.py
+      - name: Start server
+        run: |
+          uvicorn app.main:app --port 8000 > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8000/api/health && break; sleep 1; done
+      - run: python scripts/e2e_test.py
+      - if: failure()
+        run: tail -100 server.log

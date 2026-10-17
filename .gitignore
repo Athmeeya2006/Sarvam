@@ -1,0 +1,44 @@
+# ---- Secrets (NEVER commit) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials*.json
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Virtual envs ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Runtime artefacts ----
+*.log
+logs/
+tmp/
+recordings/
+*.webm
+*.wav
+# generated audio (regenerate with the scripts)
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

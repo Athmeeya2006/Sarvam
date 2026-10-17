@@ -1,0 +1,70 @@
+"""Dadi Mode: an AI decoy grandmother (fictional persona) who wastes the scammer's time and collects evidence."""
+from __future__ import annotations
+
+import logging
+import re
+import threading
+
+from . import config, prompts
+from . import sarvam_client as sc
+
+log = logging.getLogger("kavach.dadi")
+
+_FILLER_CACHE: dict[str, list[dict]] = {}
+_FILLER_LOCK = threading.Lock()
+
+
+def persona_lang(lang: str | None) -> str:
+    return "ta-IN" if lang == "ta-IN" else "hi-IN"
+
+
+def voice(lang: str) -> str:
+    return config.DADI_VOICES.get(lang, config.DADI_VOICES["default"])
+
+
+def fillers(lang: str) -> list[dict]:
+    """Pre-generated 'Haan beta… ek minute…' clips, played instantly to mask LLM+TTS latency."""
+    lang = persona_lang(lang)
+    with _FILLER_LOCK:
+        if lang in _FILLER_CACHE:
+            return _FILLER_CACHE[lang]
+    clips = []
+    for text in prompts.FILLERS[lang]:
+        try:
+            audio, _ = sc.speak(text, lang, speaker=voice(lang), pace=config.DADI_PACE)
+            clips.append({"text": text, "audio_base64": audio})
+        except sc.SarvamError as e:
+            log.warning("filler failed: %s", e)
+    with _FILLER_LOCK:
+        if clips:
+            _FILLER_CACHE[lang] = clips
+    return clips
+
+
+def warm_fillers():
+    for lang in ("hi-IN", "ta-IN"):
+        fillers(lang)
+
+
+# A Dadi line must never carry a usable number. Any run of 3+ digits (Latin or Devanagari/Tamil numerals) is cut.
+_LONG_DIGITS = re.compile(r"[0-9०-९௦-௯](?:[\s\-]?[0-9०-९௦-௯]){2,}")
+
+
+def sanitise(text: str) -> str:
+    for secret in config.REAL_DATA_BLOCKLIST:
+        text = text.replace(secret, "…")
+    return _LONG_DIGITS.sub("…", text).strip()
+
+
+def reply(history: list[dict], scammer_text: str, lang: str, collected: list[str]) -> tuple[dict, int]:
+    lang = persona_lang(lang)
+    p = prompts.PERSONAS[lang]
+    system = prompts.DADI_SYSTEM.format(
+        name=p["name"], card=p["card"], lang_name=config.LANGUAGES[lang]["english"], lang_code=lang,
+        evidence_order=prompts.EVIDENCE_ORDER, collected=", ".join(collected) or "nothing yet")
+    convo = "\n".join(f"{'SCAMMER' if h['role'] == 'scammer' else p['title'].upper()}: {h['text']}" for h in history[-12:])
+    user = f"Conversation so far:\n{convo}\n\nSCAMMER just said: {scammer_text}\n\nReply as {p['name']}."
+    out, ms = sc.chat_json(system, user, max_tokens=400, schema=prompts.DADI_SCHEMA, temperature=0.8, name="dadi")
+    out["reply_text"] = sanitise(out.get("reply_text") or "") or prompts.FILLERS[lang][1]
+    out["reply_lang"] = lang
+    return out, ms

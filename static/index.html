@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kavach · कवच</title>
+<meta name="description" content="Kavach: a live AI shield against digital arrest scam calls, built on Sarvam AI." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@500&family=Noto+Sans+Devanagari:wght@400;600;800&family=Noto+Sans+Tamil:wght@400;700&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com/3.4.5"></script>
+<style>
+  /* Monochrome by design: black, white, greys. Colour appears ONLY when it means something (red = danger, green = safe). */
+  :root { --bg:#000; --panel:#0a0a0a; --line:#262626; --line2:#3f3f3f; --ink:#fafafa; --mute:#a3a3a3; --dim:#737373; --danger:#ef4444; --safe:#22c55e; --amber:#f59e0b; }
+  html, body { background:var(--bg); color:var(--ink); font-family:Inter,"Noto Sans Devanagari","Noto Sans Tamil",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  .mono { font-family:"JetBrains Mono",ui-monospace,monospace; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:18px; }
+  .muted { color:var(--mute); } .dim { color:var(--dim); }
+  .btn { border:1px solid var(--line2); border-radius:12px; transition:all .15s; }
+  .btn:hover:not(:disabled) { border-color:#fff; background:#141414; }
+  .btn-primary { background:#fff; color:#000; border-color:#fff; }
+  .btn-primary:hover:not(:disabled) { background:#e5e5e5; color:#000; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  .chip { border:1px solid var(--line2); border-radius:999px; font-size:11px; padding:1px 8px; color:var(--mute); }
+  .badge { border:1px solid var(--line); color:var(--dim); transition:all .3s; }
+  .badge.on { border-color:#fff; color:#fff; }
+  .badge.on .tick { display:inline; }
+  .pop { animation:pop .45s cubic-bezier(.2,1.4,.4,1) both; }
+  @keyframes pop { from { transform:scale(.9) translateY(8px); opacity:0 } to { transform:none; opacity:1 } }
+  .pulse { box-shadow:0 0 0 0 rgba(255,255,255,.5); animation:ring 1.8s infinite; }
+  @keyframes ring { 70% { box-shadow:0 0 0 20px rgba(255,255,255,0) } 100% { box-shadow:0 0 0 0 rgba(255,255,255,0) } }
+  .rec-dot { width:9px; height:9px; border-radius:50%; background:var(--danger); animation:blink 1s infinite; display:inline-block; }
+  @keyframes blink { 50% { opacity:.2 } }
+  mark { background:transparent; color:#fff; border-bottom:2px solid var(--danger); padding:0 1px; }
+  .gauge-arc { transition:stroke-dashoffset .8s cubic-bezier(.2,.9,.3,1), stroke .4s; }
+  .needle { transition:transform .8s cubic-bezier(.2,.9,.3,1); transform-origin:150px 150px; }
+  .scroll::-webkit-scrollbar { width:6px } .scroll::-webkit-scrollbar-thumb { background:#333; border-radius:3px }
+  .wave span { display:inline-block; width:3px; margin:0 1.5px; background:#fff; border-radius:2px; animation:wave 1s infinite ease-in-out; }
+  @keyframes wave { 0%,100% { height:5px } 50% { height:20px } }
+  #takeover { background:radial-gradient(circle at 50% 35%, #2a0000 0%, #000 70%); }
+  #takeover .ring { border:2px solid var(--danger); animation:alarm 1.2s infinite; }
+  @keyframes alarm { 50% { box-shadow:0 0 60px 6px rgba(239,68,68,.45) } }
+  .dadi-glow { box-shadow:0 0 0 1px #fff, 0 0 32px rgba(255,255,255,.35); animation:glow 2s infinite; }
+  @keyframes glow { 50% { box-shadow:0 0 0 1px #fff, 0 0 48px rgba(255,255,255,.6) } }
+  .speaking .avatar { animation:talk .35s infinite alternate; }
+  @keyframes talk { to { transform:scale(1.12) } }
+  .new-ev { animation:sparkle 1.6s ease-out; }
+  @keyframes sparkle { 0% { box-shadow:0 0 0 2px #fff, 0 0 30px rgba(255,255,255,.8) } 100% { box-shadow:0 0 0 1px var(--line) } }
+  .step { height:6px; border-radius:3px; background:#262626; flex:1; transition:background .4s; }
+  .step.on { background:#fff; } .step.on.hot { background:var(--danger); }
+  details > summary { list-style:none; } details > summary::-webkit-details-marker { display:none; }
+  .skeleton { background:linear-gradient(90deg,#111 25%,#1c1c1c 50%,#111 75%); background-size:200% 100%; animation:sk 1.2s infinite; border-radius:8px; }
+  @keyframes sk { to { background-position:-200% 0 } }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-6xl mx-auto px-4 py-5">
+
+  <!-- Header -->
+  <header class="flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-12 h-12 rounded-2xl border border-neutral-700 flex items-center justify-center text-2xl">🛡️</div>
+      <div>
+        <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight">Kavach <span class="muted font-semibold">· कवच</span></h1>
+        <p class="text-sm muted">Scam pakdo. Scammer ko thakao. <span class="dim">Catch the scam. Tire out the scammer.</span></p>
+      </div>
+    </div>
+    <div class="flex flex-wrap gap-2 text-xs font-medium" id="badges">
+      <span class="badge rounded-full px-3 py-1" data-m="saaras">Saaras <span class="tick hidden">✓</span> <span class="ms mono dim"></span></span>
+      <span class="badge rounded-full px-3 py-1" data-m="sarvam-105b">Sarvam-105B <span class="tick hidden">✓</span> <span class="ms mono dim"></span></span>
+      <span class="badge rounded-full px-3 py-1" data-m="bulbul">Bulbul <span class="tick hidden">✓</span> <span class="ms mono dim"></span></span>
+      <span class="badge rounded-full px-3 py-1" data-m="vision">Sarvam Vision <span class="tick hidden">✓</span> <span class="ms mono dim"></span></span>
+    </div>
+  </header>
+
+  <!-- Controls -->
+  <section class="card mt-5 p-4 md:p-5 flex flex-col md:flex-row md:items-center gap-4">
+    <button id="protectBtn" class="btn btn-primary pulse text-lg md:text-xl font-extrabold px-6 py-4 flex items-center justify-center gap-3 whitespace-nowrap">
+      <span>🛡️</span><span id="protectLabel">Protect this call</span>
+    </button>
+    <div class="flex items-center gap-3">
+      <label for="lang" class="text-xs muted leading-tight">My language<br><span class="dim">मेरी भाषा</span></label>
+      <select id="lang" class="bg-black border border-neutral-700 rounded-xl px-3 py-2.5 text-base"></select>
+    </div>
+    <label class="flex items-center gap-2 text-sm muted cursor-pointer select-none">
+      <input type="checkbox" id="textModeToggle" class="accent-white w-4 h-4" /> ⌨️ Text mode
+    </label>
+    <div class="md:ml-auto flex items-center gap-3">
+      <div id="status" class="text-sm muted flex items-center gap-2 max-w-[220px]">● Not protecting</div>
+      <button id="endBtn" disabled class="btn px-3 py-2 text-sm font-semibold">End & report</button>
+      <button id="resetBtn" class="btn px-3 py-2 text-sm" title="Start over">↺</button>
+    </div>
+  </section>
+
+  <!-- Text mode panel -->
+  <section id="textPanel" class="hidden card mt-3 p-4">
+    <div class="flex items-center justify-between gap-2">
+      <p class="text-sm muted"><b class="text-white">Text mode</b> · type what the caller says. It goes through the exact same pipeline (no microphone needed).</p>
+      <span class="chip">TEXT MODE</span>
+    </div>
+    <div class="mt-3 flex gap-2">
+      <input id="textIn" class="flex-1 bg-black border border-neutral-700 rounded-xl px-3 py-2.5" placeholder="e.g. Main CBI se bol raha hoon, aapke Aadhaar par drugs ka parcel mila hai" />
+      <button id="textSend" class="btn btn-primary px-5 font-semibold">Send</button>
+    </div>
+    <div class="mt-2 flex flex-wrap gap-2 text-xs">
+      <button class="demo-script btn px-3 py-1.5" data-script="scam">▶ Scam call (Hinglish)</button>
+      <button class="demo-script btn px-3 py-1.5" data-script="tamil">▶ Scam call (Tamil)</button>
+      <button class="demo-script btn px-3 py-1.5" data-script="safe">▶ Genuine bank call</button>
+    </div>
+  </section>
+
+  <!-- ACT 1: detect -->
+  <div id="detectView" class="grid lg:grid-cols-5 gap-5 mt-5">
+    <section class="lg:col-span-2 flex flex-col gap-5">
+      <div class="card p-5">
+        <div class="flex justify-between items-center">
+          <h2 class="font-bold">Risk meter <span class="dim font-normal">· ख़तरा</span></h2>
+          <span id="scamType" class="chip">waiting</span>
+        </div>
+        <svg viewBox="0 0 300 172" class="w-full mt-2" role="img" aria-label="Risk gauge">
+          <path d="M30 150 A120 120 0 0 1 270 150" fill="none" stroke="#1a1a1a" stroke-width="20" stroke-linecap="round"/>
+          <path id="arc" class="gauge-arc" d="M30 150 A120 120 0 0 1 270 150" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-dasharray="377" stroke-dashoffset="377"/>
+          <g id="thresholdMark"><line x1="150" y1="16" x2="150" y2="40" stroke="#ef4444" stroke-width="2"/></g>
+          <g id="instantTick" class="needle" style="transform:rotate(-90deg)"><line x1="150" y1="24" x2="150" y2="46" stroke="#737373" stroke-width="3" stroke-dasharray="3 3"/></g>
+          <g id="needle" class="needle" style="transform:rotate(-90deg)"><line x1="150" y1="150" x2="150" y2="46" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/><circle cx="150" cy="150" r="8" fill="#fff"/></g>
+          <text x="150" y="124" text-anchor="middle" font-size="46" font-weight="800" fill="#fff" id="scoreText" font-family="Inter">0</text>
+          <text x="30" y="170" font-size="10" fill="#737373" font-family="Inter">SAFE</text>
+          <text x="270" y="170" font-size="10" fill="#737373" text-anchor="end" font-family="Inter">SCAM</text>
+        </svg>
+        <div class="flex justify-between text-xs muted mt-1">
+          <span>Instant check <b id="instantVal" class="text-white mono">0</b> <span class="dim">(keywords)</span></span>
+          <span>AI analysis <b id="aiVal" class="text-white mono">·</b> <span class="dim">(Sarvam-105B)</span></span>
+        </div>
+        <p id="advice" class="mt-3 text-sm muted min-h-[1.25rem]"></p>
+        <button id="dadiCta" class="hidden mt-4 w-full btn btn-primary dadi-glow py-3 text-lg font-extrabold">👵 Let Dadi handle this scammer</button>
+      </div>
+
+      <div class="card p-5">
+        <h2 class="font-bold mb-3">Red flags <span class="dim font-normal">· ख़तरे के संकेत</span> <span id="flagCount" class="text-xs muted"></span></h2>
+        <div id="flags" class="flex flex-col gap-2 max-h-[360px] overflow-y-auto scroll">
+          <p class="text-sm dim" id="noFlags">No red flags yet. Every flag must quote what the caller actually said.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="lg:col-span-3 flex flex-col gap-5">
+      <div class="card p-5">
+        <div class="flex justify-between items-center">
+          <h2 class="font-bold">Live transcript <span class="dim font-normal">· बातचीत</span></h2>
+          <div id="wave" class="wave hidden h-6 flex items-center"><span></span><span style="animation-delay:.1s"></span><span style="animation-delay:.2s"></span><span style="animation-delay:.3s"></span><span style="animation-delay:.4s"></span></div>
+        </div>
+        <div id="transcript" class="scroll mt-3 h-72 overflow-y-auto flex flex-col gap-2.5 text-lg leading-relaxed">
+          <div id="noTranscript" class="text-base muted space-y-2">
+            <p><b class="text-white">1.</b> Put the phone call on <b class="text-white">speaker</b>, next to this laptop.</p>
+            <p><b class="text-white">2.</b> Tap <b class="text-white">Protect this call</b> and allow the microphone.</p>
+            <p><b class="text-white">3.</b> Kavach listens in short chunks and warns you out loud if it is a scam.</p>
+            <p class="dim text-sm">No microphone? Tick ⌨️ Text mode above.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-5">
+        <h2 class="font-bold">📄 Check a document they sent you <span class="dim font-normal">· काग़ज़ जाँचें</span></h2>
+        <p class="text-sm muted mt-1">"Arrest warrant", RBI notice or a WhatsApp screenshot. Photo, PNG, JPG or PDF.</p>
+        <div class="mt-3 flex flex-col md:flex-row gap-4">
+          <label id="dropZone" class="flex-shrink-0 w-full md:w-44 h-44 rounded-xl border border-dashed border-neutral-600 hover:border-white flex items-center justify-center cursor-pointer overflow-hidden relative transition">
+            <img id="docPreview" class="hidden absolute inset-0 w-full h-full object-cover" alt="Uploaded document preview" />
+            <span id="docPh" class="muted text-center text-sm px-2">⬆ Upload or drop<br/><a href="#" id="useSample" class="underline text-white">use the sample fake warrant</a></span>
+            <input type="file" id="docFile" accept="image/*,application/pdf" class="hidden" />
+          </label>
+          <div id="docResult" class="flex-1 text-sm muted">Kavach reads it with <b class="text-white">Sarvam Vision</b>, judges it with <b class="text-white">Sarvam-105B</b> and explains the verdict out loud with <b class="text-white">Bulbul</b>.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ACT 3: Dadi Mode -->
+  <section id="dadiView" class="hidden mt-5">
+    <div class="card p-5 flex flex-col md:flex-row md:items-center gap-5">
+      <div class="flex items-center gap-4">
+        <div class="text-5xl">👵</div>
+        <div>
+          <h2 class="text-2xl font-extrabold"><span id="personaName">Kamla Dadi</span> is on the call</h2>
+          <p class="text-sm muted">She stalls, gets confused and quietly collects evidence. She only ever uses a fictional persona.</p>
+        </div>
+      </div>
+      <div class="md:ml-auto text-center">
+        <div class="text-xs muted uppercase tracking-widest">Scammer's time wasted</div>
+        <div id="timer" class="mono text-5xl md:text-6xl font-bold">00:00</div>
+      </div>
+    </div>
+    <div class="grid lg:grid-cols-5 gap-5 mt-5">
+      <div class="lg:col-span-3 card p-5 flex flex-col">
+        <div class="flex justify-between items-center">
+          <h3 class="font-bold">Conversation</h3>
+          <span id="dadiState" class="chip">listening</span>
+        </div>
+        <div id="chat" class="scroll mt-3 h-[26rem] overflow-y-auto flex flex-col gap-3"></div>
+        <div id="dadiTextRow" class="mt-3 flex gap-2">
+          <input id="dadiTextIn" class="flex-1 bg-black border border-neutral-700 rounded-xl px-3 py-2.5" placeholder="Text mode: type what the scammer says…" />
+          <button id="dadiTextSend" class="btn btn-primary px-4 font-semibold">Send</button>
+        </div>
+        <div class="mt-2 flex flex-wrap gap-2 text-xs">
+          <button class="dadi-demo btn px-3 py-1.5" data-line="Dadi ji jaldi karo, mera UPI hai cbi.verify@okaxis, abhi 50,000 bhejo">▶ "my UPI is…"</button>
+          <button class="dadi-demo btn px-3 py-1.5" data-line="Main Inspector Vikram Singh hoon, badge number MH 4521, mera number 9876543210 hai">▶ "name + badge + number"</button>
+          <button class="dadi-demo btn px-3 py-1.5" data-line="Account number 50100234567812 aur IFSC HDFC0001234 mein transfer karo, case number CBI/2024/786">▶ "account + IFSC"</button>
+        </div>
+      </div>
+      <div class="lg:col-span-2 flex flex-col gap-5">
+        <div class="card p-5">
+          <h3 class="font-bold">Scam DNA</h3>
+          <p class="text-sm muted mt-1">Playbook: <b id="dnaPlaybook" class="text-white">unclear</b></p>
+          <div class="flex gap-1.5 mt-3" id="dnaSteps"></div>
+          <div class="flex justify-between text-[10px] dim mt-1.5"><span>hook</span><span>fear</span><span>isolation</span><span>payment</span><span>pressure</span></div>
+        </div>
+        <div class="card p-5 flex-1">
+          <div class="flex justify-between items-center"><h3 class="font-bold">🔒 Evidence Locker</h3><span id="evCount" class="chip">0 items</span></div>
+          <div id="locker" class="scroll mt-3 max-h-[22rem] overflow-y-auto flex flex-col gap-2">
+            <p class="text-sm dim" id="noEvidence">Dadi will innocently ask for the UPI ID, name, badge, phone number and account. Everything he says lands here.</p>
+          </div>
+        </div>
+        <button id="dadiEnd" class="btn btn-primary py-3 font-extrabold text-lg">End & report to 1930</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Report -->
+  <section id="endPanel" class="hidden card mt-5 p-5"></section>
+
+  <!-- Footer -->
+  <footer class="mt-6 pt-4 border-t border-neutral-900 text-xs muted flex flex-wrap gap-x-5 gap-y-2 items-center">
+    <span class="text-white font-semibold">Latency</span>
+    <span>Saaras <b id="lat-saaras" class="mono text-white">·</b></span>
+    <span>Sarvam-105B <b id="lat-sarvam-105b" class="mono text-white">·</b></span>
+    <span>Bulbul <b id="lat-bulbul" class="mono text-white">·</b></span>
+    <span>Vision <b id="lat-vision" class="mono text-white">·</b></span>
+    <span class="md:ml-auto">🔒 Listens only after you tap Protect · no audio stored · transcript deleted when the call ends · helpline <b class="text-white">1930</b></span>
+  </footer>
+</div>
+
+<!-- ACT 2: full-screen takeover -->
+<div id="takeover" class="hidden fixed inset-0 z-40 overflow-y-auto">
+  <div class="min-h-full flex flex-col items-center justify-center text-center p-6">
+    <div class="ring w-24 h-24 rounded-full flex items-center justify-center text-5xl">✋</div>
+    <h2 class="text-5xl md:text-7xl font-extrabold mt-5 tracking-tight">CALL KAATIYE</h2>
+    <p class="text-2xl md:text-3xl font-bold mt-2" style="color:var(--danger)">कॉल काटिए · HANG UP NOW</p>
+    <p id="warnText" class="text-xl md:text-2xl mt-6 max-w-3xl leading-relaxed text-neutral-200"></p>
+    <p class="mt-4 muted">Report it: <b class="text-white text-2xl mono">1930</b> · cybercrime.gov.in</p>
+    <div class="mt-8 flex flex-wrap gap-3 justify-center items-center">
+      <button id="replayBtn" class="btn btn-primary font-bold px-5 py-3">🔊 Replay warning</button>
+      <select id="warnLang" class="bg-black border border-neutral-700 rounded-xl px-3 py-3"></select>
+      <button id="speakLangBtn" class="btn px-4 py-3 font-semibold">Speak in this language</button>
+    </div>
+    <button id="takeoverDadi" class="mt-6 btn btn-primary dadi-glow px-8 py-4 text-xl font-extrabold">👵 Let Dadi handle this scammer</button>
+    <div class="mt-5 flex flex-wrap gap-4 justify-center text-sm">
+      <button id="takeoverEnd" class="underline muted hover:text-white">I hung up: write the report</button>
+      <button id="dismissBtn" class="underline dim hover:text-white">Dismiss</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm"></div>
+<audio id="player" class="hidden" preload="auto"></audio>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const LANGS = { "hi-IN":"हिन्दी · Hindi","ta-IN":"தமிழ் · Tamil","bn-IN":"বাংলা · Bengali","mr-IN":"मराठी · Marathi","te-IN":"తెలుగు · Telugu","kn-IN":"ಕನ್ನಡ · Kannada","en-IN":"English" };
+const ICONS = { authority_impersonation:"👮", secrecy_demand:"🤫", urgency_threat:"⏰", money_or_otp_request:"💸", stay_on_call_or_video:"📹", remote_app_install:"📲", too_good_offer:"🎁", personal_data_request:"🪪" };
+const EV = { upi_id:["💸","UPI ID"], phone_number:["📞","Phone number"], bank_account:["🏦","Bank account"], ifsc:["🏦","IFSC"], claimed_name:["🪪","Claimed name"], claimed_department:["🏢","Claimed department"], badge_number:["🎖️","Badge number"], case_number:["📁","Case number"], amount_demanded:["₹","Amount demanded"], email:["✉️","Email"], other:["📌","Other"] };
+const STAGES = ["hook","fear","isolation","payment_demand","pressure"];
+const SCRIPTS = {
+  scam: ["Hello, namaste. Main Mumbai CBI cyber cell se Inspector Vikram Singh bol raha hoon.",
+         "Aapke Aadhaar card se ek FedEx parcel book hua hai jismein drugs aur paanch fake passport mile hain.",
+         "Aapke naam par money laundering ka FIR aur arrest warrant nikal chuka hai.",
+         "Ye case bahut confidential hai. Kisi ko mat batana, apne bete ko bhi nahi.",
+         "Abhi video call par aaiye. Aap digital arrest mein hain, call mat kaatna.",
+         "Apni innocence prove karne ke liye RBI verification ke liye saare paise safe account mein transfer kariye."],
+  tamil: ["வணக்கம், நான் மும்பை சிபிஐ சைபர் கிரைம் பிரிவிலிருந்து இன்ஸ்பெக்டர் விக்ரம் பேசுகிறேன்.",
+          "உங்கள் ஆதார் எண்ணில் ஒரு பார்சல் பிடிபட்டது, அதில் போதைப் பொருள் இருக்கிறது, உங்கள் பெயரில் கைது வாரண்ட் வந்துள்ளது.",
+          "இது ரகசிய வழக்கு, யாரிடமும் சொல்லக் கூடாது, வீடியோ கால் துண்டிக்காதீர்கள், நீங்கள் டிஜிட்டல் அரெஸ்ட்டில் இருக்கிறீர்கள்.",
+          "உங்கள் நிரபராதித்தனத்தை நிரூபிக்க RBI வெரிஃபிகேஷனுக்காக எல்லா பணத்தையும் இந்த சேஃப் அக்கவுண்டுக்கு உடனே அனுப்புங்கள்."],
+  safe: ["Namaste, main HDFC Bank se Priya bol rahi hoon, kya meri baat Sharma ji se ho rahi hai?",
+         "Sir, aapki home loan ki EMI is mahine paanch tarikh ko due hai, amount hai baarah hazaar chaar sau rupaye.",
+         "Kripya due date se pehle account mein balance rakh dijiye ya bank ke app se pay kar dijiye.",
+         "Aur haan sir, bank kabhi bhi phone par OTP ya PIN nahi maangta, kisi ko mat dijiyega."]
+};
+
+const S = {
+  sid:null, threshold:70, chunkMs:6000, recording:false, paused:false, stream:null, recorder:null, discard:false,
+  queue:Promise.resolve(), warned:false, dismissedAt:0, lastWarnAudio:null,
+  dadi:false, dadiLang:"hi-IN", fillers:{}, timerBase:0, timerAt:0, timerId:null, busy:false,
+  audioCtx:null, analyser:null, peak:0, levelId:null, dnaStage:-1,
+};
+
+for (const [k,v] of Object.entries(LANGS)) { $("#lang").add(new Option(v,k)); $("#warnLang").add(new Option(v,k)); }
+try { const l = localStorage.getItem("kavach-lang"); if (l && LANGS[l]) $("#lang").value = l; } catch {}
+$("#dnaSteps").innerHTML = STAGES.map(() => `<div class="step"></div>`).join("");
+
+/* ---------------- helpers ---------------- */
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function toast(msg, kind = "err") {
+  const el = document.createElement("div");
+  el.className = `pop rounded-xl px-4 py-3 text-sm shadow-2xl border ${kind === "err" ? "bg-black border-red-500 text-white" : "bg-black border-neutral-600 text-neutral-200"}`;
+  el.innerHTML = (kind === "err" ? "⚠️ " : "ℹ️ ") + esc(msg);
+  $("#toasts").append(el); setTimeout(() => el.remove(), 6500);
+}
+function lat(map) {
+  for (const [k, v] of Object.entries(map || {})) {
+    const key = k === "evidence" ? "sarvam-105b" : k;
+    const el = $("#lat-" + key); if (el) el.textContent = v + " ms";
+    const b = document.querySelector(`.badge[data-m="${key}"]`);
+    if (b) { b.classList.add("on"); b.querySelector(".tick").classList.remove("hidden"); b.querySelector(".ms").textContent = v + "ms"; }
+  }
+}
+function humanError(msg, status) {
+  if (status === 401 || status === 403 || /401|403|invalid.*key|unauthori/i.test(msg)) return "Sarvam rejected the API key. Check SARVAM_API_KEY in .env and restart the server.";
+  if (status === 429) return "Sarvam rate limit hit. Wait a few seconds and try again.";
+  if (/Failed to fetch|NetworkError/i.test(msg)) return "Cannot reach the Kavach server. Is uvicorn running on port 8000?";
+  return msg;
+}
+async function api(path, opts = {}) {
+  let r;
+  try { r = await fetch(path, opts); } catch (e) { throw new Error(humanError(e.message)); }
+  let body = {}; try { body = await r.json(); } catch {}
+  if (!r.ok && r.status !== 429) throw new Error(humanError(body.detail || `HTTP ${r.status}`, r.status));
+  body._status = r.status; return body;
+}
+const jpost = (p, b) => api(p, { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(b || {}) });
+function status(html) { $("#status").innerHTML = html; }
+const fmt = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+/* ---------------- audio out (unlocked on first click; half-duplex with the mic) ---------------- */
+const player = $("#player");
+function unlockAudio() {
+  if (S.unlocked) return; S.unlocked = true;
+  player.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="; player.play().catch(() => {});
+}
+let playChain = Promise.resolve();
+function playNow(b64) {
+  // Plays one clip; resolves when it ends. Mic is paused while Kavach speaks so it never transcribes itself.
+  return new Promise(resolve => {
+    if (!b64) return resolve();
+    pauseMic();
+    player.onended = player.onerror = () => resolve();
+    player.src = "data:audio/wav;base64," + b64;
+    player.play().catch(() => { toast("Your browser blocked autoplay. Click anywhere on the page, then press Replay.", "info"); resolve(); });
+  });
+}
+function playQueued(b64, { resume = true } = {}) {
+  playChain = playChain.then(() => playNow(b64)).then(() => { if (resume) resumeMicSoon(); });
+  return playChain;
+}
+function stopAudio() { player.pause(); player.removeAttribute("src"); playChain = Promise.resolve(); }
+
+/* ---------------- gauge ---------------- */
+function setGauge(ai, instant) {
+  const shown = ai ?? instant ?? 0;
+  const col = shown >= S.threshold ? "#ef4444" : shown >= 45 ? "#f59e0b" : shown > 0 ? "#22c55e" : "#fff";
+  $("#arc").style.strokeDashoffset = 377 - 377 * shown / 100; $("#arc").setAttribute("stroke", col);
+  $("#needle").style.transform = `rotate(${-90 + 180 * shown / 100}deg)`;
+  $("#instantTick").style.transform = `rotate(${-90 + 180 * (instant || 0) / 100}deg)`;
+  $("#scoreText").textContent = shown;
+  $("#instantVal").textContent = instant ?? 0;
+  $("#aiVal").textContent = ai ?? "·";
+}
+function placeThreshold() { $("#thresholdMark").style.transform = `rotate(${-90 + 180 * S.threshold / 100}deg)`; $("#thresholdMark").style.transformOrigin = "150px 150px"; }
+
+/* ---------------- session ---------------- */
+async function ensureSession() {
+  if (S.sid) return S.sid;
+  const r = await jpost("/api/session/start", { user_lang: $("#lang").value });
+  S.sid = r.session_id; S.threshold = r.threshold; placeThreshold(); $("#endBtn").disabled = false;
+  return S.sid;
+}
+$("#lang").onchange = async () => {
+  try { localStorage.setItem("kavach-lang", $("#lang").value); } catch {}
+  $("#warnLang").value = $("#lang").value;
+  if (S.sid) await jpost(`/api/session/${S.sid}/language`, { language: $("#lang").value }).catch(() => {});
+};
+$("#textModeToggle").onchange = e => { $("#textPanel").classList.toggle("hidden", !e.target.checked); if (e.target.checked) $("#textIn").focus(); };
+
+/* ---------------- Act 1: render detection ---------------- */
+function render(r) {
+  lat(r.latencies_ms);
+  if (r.transcript_chunk && r.transcript_chunk.text) addTranscript(r.transcript_chunk, r.flags || []);
+  const ai = r.ai_result;
+  if (r.instant_score != null || ai) setGauge(ai ? ai.risk_score : null, r.instant_score ?? 0);
+  if (ai) {
+    $("#advice").textContent = ai.advice || "";
+    const t = (ai.scam_type || "none").replace(/_/g, " ");
+    $("#scamType").textContent = t;
+    $("#scamType").style.borderColor = ai.risk_score >= S.threshold ? "#ef4444" : "";
+    $("#scamType").style.color = ai.risk_score >= S.threshold ? "#fff" : "";
+  }
+  renderFlags(r.flags || []);
+  if (r.ai_error) toast("AI analysis hiccup, showing the instant check for now. " + r.ai_error);
+  // Only the AI score can trigger the takeover. The keyword check is just a fast hint.
+  if (ai && ai.risk_score >= S.threshold) {
+    $("#dadiCta").classList.remove("hidden");
+    if (!S.warned && !S.dadi && Date.now() - S.dismissedAt > 20000) triggerTakeover(ai);
+  }
+}
+function addTranscript(c, flags) {
+  $("#noTranscript")?.remove();
+  const row = document.createElement("div");
+  row.className = "pop flex gap-2 items-start";
+  const chip = c.mode === "text" ? `<span class="chip mt-1.5">TEXT</span>` : `<span class="chip mt-1.5 mono">${esc(c.lang || "?")}</span>`;
+  row.innerHTML = `<span class="text-xs dim mt-2 w-10 shrink-0 mono">${c.t}s</span>${chip}<span class="text-neutral-100">${highlight(c.text, flags)}</span>`;
+  $("#transcript").append(row); $("#transcript").scrollTop = 1e9;
+}
+function highlight(text, flags) {
+  let h = esc(text);
+  for (const f of flags) { const q = esc(f.evidence_quote || ""); if (q.length > 3 && h.includes(q)) h = h.replace(q, `<mark>${q}</mark>`); }
+  return h;
+}
+function renderFlags(flags) {
+  if (!flags.length) return;
+  $("#noFlags")?.remove();
+  $("#flagCount").textContent = `(${flags.length})`;
+  for (const f of flags) {
+    const id = "flag-" + f.flag; let el = document.getElementById(id);
+    const html = `<div class="text-2xl leading-none mt-0.5">${ICONS[f.flag] || "⚠️"}</div>
+      <div class="min-w-0 flex-1"><div class="font-semibold text-white">${esc(f.label_local || "")} <span class="muted font-normal">· ${esc(f.label_en)}</span></div>
+      <div class="text-sm mt-1 text-neutral-300 break-words">“<mark>${esc(f.evidence_quote)}</mark>”</div></div>
+      <span class="chip self-start whitespace-nowrap">${f.source === "ai" ? "AI ✓" : "instant"}</span>`;
+    if (!el) { el = document.createElement("div"); el.id = id; el.className = "pop flex gap-3 rounded-xl border border-neutral-800 border-l-2 p-3"; el.style.borderLeftColor = "#ef4444"; $("#flags").prepend(el); }
+    el.innerHTML = html;
+  }
+}
+
+/* ---------------- Act 2: takeover + Bulbul warning ---------------- */
+async function triggerTakeover(ai) {
+  S.warned = true;
+  $("#warnText").textContent = ai.warning_text || "";
+  $("#warnLang").value = $("#lang").value;
+  $("#takeover").classList.remove("hidden");
+  await speakWarning($("#lang").value, false);
+}
+async function speakWarning(lang, force) {
+  try {
+    $("#replayBtn").textContent = "⏳ Generating…";
+    const r = await jpost(`/api/session/${S.sid}/warn${force ? "?force=true" : ""}`, { language: lang });
+    if (r._status === 429) { if (S.lastWarnAudio) playQueued(S.lastWarnAudio); return; }
+    lat(r.latencies_ms); $("#warnText").textContent = r.warning_text; S.lastWarnAudio = r.audio_base64;
+    stopAudio(); playQueued(r.audio_base64);
+  } catch (e) { toast("Warning voice failed: " + e.message); }
+  finally { $("#replayBtn").textContent = "🔊 Replay warning"; }
+}
+$("#replayBtn").onclick = () => { if (S.lastWarnAudio) { stopAudio(); playQueued(S.lastWarnAudio); } else speakWarning($("#lang").value, true); };
+$("#speakLangBtn").onclick = () => speakWarning($("#warnLang").value, true);
+$("#dismissBtn").onclick = () => { $("#takeover").classList.add("hidden"); S.dismissedAt = Date.now(); S.warned = false; stopAudio(); resumeMicSoon(); };
+$("#takeoverEnd").onclick = () => { $("#takeover").classList.add("hidden"); stopAudio(); endCall(); };
+$("#takeoverDadi").onclick = startDadi;
+$("#dadiCta").onclick = startDadi;
+
+/* ---------------- microphone: one standalone recorder per chunk, with a simple voice-activity check ---------------- */
+function pickMime() {
+  for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"])
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  return "";
+}
+function startLevelMeter() {
+  try {
+    S.audioCtx = S.audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const src = S.audioCtx.createMediaStreamSource(S.stream);
+    S.analyser = S.audioCtx.createAnalyser(); S.analyser.fftSize = 1024; src.connect(S.analyser);
+    const buf = new Float32Array(S.analyser.fftSize);
+    clearInterval(S.levelId);
+    S.levelId = setInterval(() => {
+      S.analyser.getFloatTimeDomainData(buf);
+      let sum = 0; for (const v of buf) sum += v * v;
+      S.peak = Math.max(S.peak, Math.sqrt(sum / buf.length));
+    }, 100);
+  } catch { S.analyser = null; }
+}
+function recordLoop() {
+  if (!S.recording || S.paused || (S.recorder && S.recorder.state === "recording")) return;
+  const mime = pickMime();
+  const rec = new MediaRecorder(S.stream, mime ? { mimeType: mime } : undefined), parts = [];
+  S.recorder = rec; S.discard = false; S.peak = 0;
+  rec.ondataavailable = e => e.data.size && parts.push(e.data);
+  rec.onstop = () => {
+    const discard = S.discard, peak = S.peak, type = rec.mimeType || mime || "audio/webm";
+    if (S.recording && !S.paused) recordLoop();          // next chunk starts immediately, no gap
+    if (discard) return;                                  // chunk overlapped Kavach speaking: drop it
+    const voiced = !S.analyser || peak > 0.012;
+    if (S.dadi && !voiced) return;                        // in Dadi Mode, ignore silent chunks
+    const blob = new Blob(parts, { type });
+    const ext = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
+    S.queue = S.queue.then(() => S.dadi ? sendDadiAudio(blob, ext, type) : sendChunk(blob, ext, type));
+  };
+  rec.start();
+  setTimeout(() => rec.state === "recording" && rec.stop(), S.chunkMs);
+}
+function pauseMic() {
+  S.paused = true;
+  if (S.recorder && S.recorder.state === "recording") { S.discard = true; S.recorder.stop(); }
+  if (S.recording) status(`<span class="muted">🔇 Mic paused while Kavach speaks</span>`);
+}
+let resumeTimer = null;
+function resumeMicSoon() {
+  clearTimeout(resumeTimer);
+  resumeTimer = setTimeout(() => {
+    if (!player.paused && !player.ended) return;
+    S.paused = false;
+    if (S.recording) { recordLoop(); listeningStatus(); }
+  }, 300);
+}
+function listeningStatus() { status(`<span class="rec-dot"></span> <span class="text-white font-semibold">${S.dadi ? "Dadi is listening" : "Listening on speakerphone"}</span>`); }
+async function sendChunk(blob, ext, type) {
+  if (!S.sid || blob.size < 1500) return;
+  const fd = new FormData(); fd.append("audio", blob, "chunk." + ext); fd.append("mime", type);
+  try { render(await api(`/api/session/${S.sid}/chunk`, { method: "POST", body: fd })); }
+  catch (e) { toast(e.message); }
+}
+async function startMic() {
+  if (!navigator.mediaDevices?.getUserMedia) { toast("This browser cannot use the microphone here. Open http://localhost:8000 in Chrome or Edge, or use Text mode."); return false; }
+  try {
+    S.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (e) {
+    const blocked = /denied|NotAllowed|Permission/i.test(e.name + e.message);
+    toast(blocked ? "Mic blocked: click the 🔒 icon in the address bar, allow the microphone, then try again. Or use Text mode."
+                  : "No microphone found (" + e.message + "). Use Text mode instead.");
+    return false;
+  }
+  startLevelMeter();
+  S.recording = true; S.paused = false; recordLoop();
+  $("#protectLabel").textContent = "Protecting · tap to pause"; $("#protectBtn").classList.remove("pulse");
+  $("#wave").classList.remove("hidden"); listeningStatus();
+  return true;
+}
+function stopMic() {
+  S.recording = false;
+  if (S.recorder && S.recorder.state === "recording") { S.discard = true; S.recorder.stop(); }
+  S.stream?.getTracks().forEach(t => t.stop()); S.stream = null;
+  clearInterval(S.levelId);
+  $("#protectLabel").textContent = "Protect this call"; $("#wave").classList.add("hidden");
+  status("● Paused");
+}
+$("#protectBtn").onclick = async () => {
+  unlockAudio();
+  if (S.recording) return stopMic();
+  try { await ensureSession(); } catch (e) { return toast(e.message); }
+  await startMic();
+};
+
+/* ---------------- text mode ---------------- */
+async function sendText(text, lang) {
+  if (!text.trim()) return;
+  unlockAudio();
+  try { await ensureSession(); } catch (e) { return toast(e.message); }
+  if (!S.recording) status(`<span class="text-white">⌨️ Text mode</span>`);
+  try { render(await jpost("/api/demo/text", { session_id: S.sid, text, lang })); } catch (e) { toast(e.message); }
+}
+$("#textSend").onclick = () => { const t = $("#textIn").value; $("#textIn").value = ""; sendText(t); };
+$("#textIn").onkeydown = e => e.key === "Enter" && $("#textSend").click();
+document.querySelectorAll(".demo-script").forEach(b => b.onclick = async () => {
+  document.querySelectorAll(".demo-script").forEach(x => x.disabled = true);
+  const lang = b.dataset.script === "tamil" ? "ta-IN" : null;
+  if (lang && $("#lang").value !== "ta-IN") { $("#lang").value = "ta-IN"; await $("#lang").onchange(); }
+  for (const line of SCRIPTS[b.dataset.script]) {
+    if (!$("#takeover").classList.contains("hidden") || S.dadi) break;
+    await sendText(line, lang);
+    await new Promise(r => setTimeout(r, 500));
+  }
+  document.querySelectorAll(".demo-script").forEach(x => x.disabled = false);
+});
+
+/* ---------------- Act 3: Dadi Mode ---------------- */
+async function loadFillers(lang) {
+  if (S.fillers[lang]) return;
+  try { const r = await api(`/api/fillers?lang=${lang}`); S.fillers[lang] = r.clips || []; } catch { S.fillers[lang] = []; }
+}
+function randomFiller(lang) { const c = S.fillers[lang] || []; return c.length ? c[Math.floor(Math.random() * c.length)] : null; }
+async function startDadi() {
+  if (!S.sid) return;
+  unlockAudio();
+  $("#takeover").classList.add("hidden"); stopAudio();
+  $("#takeoverDadi").disabled = $("#dadiCta").disabled = true;
+  try {
+    const r = await jpost(`/api/session/${S.sid}/dadi/start`);
+    lat(r.latencies_ms);
+    S.dadi = true; S.dadiLang = r.dadi_lang;
+    $("#personaName").textContent = r.persona;
+    $("#detectView").classList.add("hidden"); $("#dadiView").classList.remove("hidden");
+    $("#dadiView").scrollIntoView({ behavior: "smooth" });
+    startTimer(r.time_wasted_s);
+    loadFillers("hi-IN"); loadFillers("ta-IN");
+    addBubble("dadi", r.dadi_text, "opening");
+    setDadiState("speaking");
+    await playQueued(r.dadi_audio_b64);
+    setDadiState("listening");
+    if (S.recording) listeningStatus(); else status(`<span class="text-white">⌨️ Text mode · type the scammer's lines below</span>`);
+  } catch (e) { toast("Could not start Dadi Mode: " + e.message); }
+  finally { $("#takeoverDadi").disabled = $("#dadiCta").disabled = false; }
+}
+function startTimer(base) {
+  S.timerBase = base || 0; S.timerAt = Date.now(); clearInterval(S.timerId);
+  S.timerId = setInterval(() => { $("#timer").textContent = fmt(S.timerBase + (Date.now() - S.timerAt) / 1000); }, 250);
+}
+function setDadiState(st) {
+  $("#dadiState").textContent = { listening: "👂 listening", thinking: "💭 thinking", speaking: "🔊 speaking" }[st] || st;
+  document.querySelectorAll(".bubble-dadi").forEach(b => b.classList.remove("speaking"));
+  if (st === "speaking") document.querySelector(".bubble-dadi:last-of-type")?.classList.add("speaking");
+}
+function addBubble(who, text, tag) {
+  const wrap = document.createElement("div");
+  if (who === "scammer") {
+    wrap.className = "pop self-end max-w-[85%]";
+    wrap.innerHTML = `<div class="text-[11px] dim text-right mb-1">Scammer</div><div class="rounded-2xl rounded-tr-sm border px-4 py-2.5 text-neutral-100" style="border-color:#7f1d1d;background:#140505">${esc(text)}</div>`;
+  } else {
+    wrap.className = "pop bubble-dadi self-start max-w-[85%] flex gap-2 items-end";
+    wrap.innerHTML = `<div class="avatar text-3xl">👵</div><div><div class="text-[11px] dim mb-1">${esc($("#personaName").textContent)} ${tag ? `<span class="chip ml-1">${esc(tag.replace(/_/g, " "))}</span>` : ""}</div>
+      <div class="rounded-2xl rounded-bl-sm bg-white text-black px-4 py-2.5 text-lg">${esc(text)}</div></div>`;
+  }
+  $("#chat").append(wrap); $("#chat").scrollTop = 1e9;
+  return wrap;
+}
+function renderDadi(r) {
+  lat(r.latencies_ms);
+  if (r.time_wasted_s != null) startTimer(r.time_wasted_s);
+  if (r.scam_dna) renderDna(r.scam_dna);
+  if (r.evidence_locker) renderLocker(r.evidence_locker, new Set((r.new_evidence || []).map(i => i.kind + i.value)));
+  if (r.dadi_lang) S.dadiLang = r.dadi_lang;
+}
+// Turns are queued, never dropped: a line sent while Dadi is talking is answered right after.
+let turnChain = Promise.resolve();
+function dadiTurn(sendFn, scammerPreview) {
+  turnChain = turnChain.then(() => runDadiTurn(sendFn, scammerPreview));
+  return turnChain;
+}
+async function runDadiTurn(sendFn, scammerPreview) {
+  S.busy = true;
+  let bubble = scammerPreview ? addBubble("scammer", scammerPreview) : null;
+  setDadiState("thinking");
+  // Latency masking: play a short filler instantly while Saaras + 105B + Bulbul work.
+  const filler = randomFiller(S.dadiLang);
+  const fillerDone = filler ? playQueued(filler.audio_base64, { resume: false }) : Promise.resolve();
+  try {
+    const r = await sendFn();
+    if (r.skipped) { await fillerDone; resumeMicSoon(); setDadiState("listening"); return; }
+    if (!bubble) addBubble("scammer", r.scammer_text);
+    renderDadi(r);
+    addBubble("dadi", r.dadi_text, r.stalling_tactic);
+    await fillerDone;
+    setDadiState("speaking");
+    await playQueued(r.dadi_audio_b64);
+    setDadiState("listening");
+  } catch (e) { toast(e.message); await fillerDone; resumeMicSoon(); setDadiState("listening"); }
+  finally { S.busy = false; }
+}
+function sendDadiAudio(blob, ext, type) {
+  if (blob.size < 1500) return Promise.resolve();
+  pauseMic();  // half-duplex: stop listening as soon as the scammer's line is captured
+  const fd = new FormData(); fd.append("audio", blob, "turn." + ext); fd.append("mime", type);
+  return dadiTurn(() => api(`/api/session/${S.sid}/dadi/turn`, { method: "POST", body: fd }));
+}
+function sendDadiText(text) {
+  if (!text.trim() || !S.dadi) return;
+  unlockAudio();
+  return dadiTurn(() => jpost("/api/demo/text", { session_id: S.sid, text, dadi: true }), text);
+}
+$("#dadiTextSend").onclick = () => { const t = $("#dadiTextIn").value; $("#dadiTextIn").value = ""; sendDadiText(t); };
+$("#dadiTextIn").onkeydown = e => e.key === "Enter" && $("#dadiTextSend").click();
+document.querySelectorAll(".dadi-demo").forEach(b => b.onclick = () => sendDadiText(b.dataset.line));
+$("#dadiEnd").onclick = () => endCall();
+
+function renderDna(d) {
+  $("#dnaPlaybook").textContent = (d.playbook || "unclear").replace(/_/g, " ");
+  const idx = STAGES.indexOf(d.stage);
+  S.dnaStage = Math.max(S.dnaStage, idx);
+  document.querySelectorAll("#dnaSteps .step").forEach((el, i) => { el.classList.toggle("on", i <= S.dnaStage); el.classList.toggle("hot", i <= S.dnaStage && S.dnaStage >= 3); });
+}
+function renderLocker(items, fresh) {
+  if (!items.length) return;
+  $("#noEvidence")?.remove();
+  $("#evCount").textContent = `${items.length} item${items.length > 1 ? "s" : ""}`;
+  const box = $("#locker");
+  for (const it of items) {
+    const id = "ev-" + btoa(unescape(encodeURIComponent(it.kind + it.value))).replace(/[^a-z0-9]/gi, "");
+    if (document.getElementById(id)) continue;
+    const [icon, label] = EV[it.kind] || EV.other;
+    const el = document.createElement("div");
+    el.id = id; el.className = "pop rounded-xl border border-neutral-800 p-3" + (fresh.has(it.kind + it.value) ? " new-ev" : "");
+    el.innerHTML = `<div class="flex justify-between items-center text-xs muted"><span>${icon} ${label}</span><span class="mono">${esc(it.at || "")} · ${it.t}s ${fresh.has(it.kind + it.value) ? '<span class="text-white">✨ new</span>' : ""}</span></div>
+      <div class="mono text-lg text-white mt-1 break-all">${esc(it.value)}</div>
+      ${it.quote ? `<div class="text-xs dim mt-1 break-words">“${esc(it.quote)}”</div>` : ""}`;
+    box.prepend(el);
+  }
+}
+
+/* ---------------- document check ---------------- */
+$("#docFile").onchange = e => e.target.files[0] && checkDoc(e.target.files[0]);
+$("#useSample").onclick = async e => {
+  e.preventDefault(); e.stopPropagation();
+  try { const blob = await (await fetch("/samples/fake_cbi_warrant.png")).blob(); checkDoc(new File([blob], "fake_cbi_warrant.png", { type: "image/png" })); }
+  catch (err) { toast("Could not load the sample: " + err.message); }
+};
+const dz = $("#dropZone");
+dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = "#fff"; };
+dz.ondragleave = () => dz.style.borderColor = "";
+dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = ""; const f = e.dataTransfer.files[0]; if (f) checkDoc(f); };
+async function checkDoc(file) {
+  unlockAudio();
+  if (file.type.startsWith("image/")) { $("#docPreview").src = URL.createObjectURL(file); $("#docPreview").classList.remove("hidden"); $("#docPh").classList.add("hidden"); }
+  $("#docResult").innerHTML = `<div class="space-y-2"><p class="text-white flex items-center gap-2"><span class="wave flex items-center h-5"><span></span><span style="animation-delay:.1s"></span><span style="animation-delay:.2s"></span></span> Sarvam Vision is reading it (extract + digitise), then Sarvam-105B judges it. Usually 10 to 20 s.</p>
+    <div class="skeleton h-5 w-2/3"></div><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-5/6"></div></div>`;
+  const fd = new FormData(); fd.append("image", file); fd.append("language", $("#lang").value);
+  try {
+    const r = await api("/api/verify-document", { method: "POST", body: fd }); lat(r.latencies_ms);
+    const V = { likely_fake: ["LIKELY FAKE", "नकली", "#ef4444"], suspicious: ["SUSPICIOUS", "संदिग्ध", "#f59e0b"], looks_genuine: ["LOOKS GENUINE", "असली लगता है", "#22c55e"] }[r.verdict];
+    const fields = Object.entries(r.fields || {}).map(([k, v]) => {
+      const c = (r.field_confidence || {})[k]; const low = c != null && c < 0.6;
+      const val = v === null || v === "" ? '<span class="dim">not found</span>' : esc(typeof v === "boolean" ? (v ? "yes" : "no") : v);
+      return `<tr class="border-t border-neutral-900"><td class="py-1 pr-3 dim whitespace-nowrap align-top">${esc(k.replace(/_/g, " "))}</td><td class="py-1 text-neutral-200 break-words">${val}</td>
+        <td class="py-1 pl-2 mono text-right align-top ${low ? "text-white" : "dim"}">${c == null ? "" : (low ? "⚠ " : "") + Math.round(c * 100) + "%"}</td></tr>`;
+    }).join("");
+    $("#docResult").innerHTML = `<div class="pop rounded-xl border p-4" style="border-color:${V[2]}">
+      <div class="flex justify-between items-center gap-2"><b class="text-xl" style="color:${V[2]}">${V[0]} · ${V[1]}</b>${r.confidence != null ? `<span class="chip">${r.confidence}% sure</span>` : ""}</div>
+      <p class="mt-2 text-neutral-100">${esc(r.spoken_summary)}</p>
+      <ul class="mt-3 space-y-2">${(r.reasons || []).map(x => `<li class="text-sm"><b class="text-white">• ${esc(x.reason_local || x.reason_en)}</b><br><span class="muted">${esc(x.reason_en || "")}</span>${x.evidence ? `<br><mark class="text-xs">${esc(String(x.evidence).slice(0, 220))}</mark>` : ""}</li>`).join("")}</ul>
+      <div class="mt-3 flex flex-wrap gap-2 items-start">${r.audio_base64 ? `<button id="docReplay" class="btn px-3 py-1.5 text-sm">🔊 Hear verdict</button>` : ""}
+        <details class="text-xs w-full"><summary class="cursor-pointer muted hover:text-white py-1">▸ Fields read by Sarvam Vision (with confidence)</summary><table class="w-full mt-1">${fields}</table></details>
+        <details class="text-xs w-full"><summary class="cursor-pointer muted hover:text-white py-1">▸ Full OCR text</summary><pre class="whitespace-pre-wrap mt-1 text-neutral-400">${esc(r.ocr_text)}</pre></details></div></div>`;
+    if (r.audio_base64) { stopAudio(); playQueued(r.audio_base64); $("#docReplay").onclick = () => { stopAudio(); playQueued(r.audio_base64); }; }
+  } catch (e) { $("#docResult").innerHTML = `<p class="text-white">⚠️ ${esc(e.message)}</p>`; toast(e.message); }
+}
+
+/* ---------------- end & report ---------------- */
+$("#endBtn").onclick = () => endCall();
+async function endCall() {
+  if (!S.sid) return;
+  stopMic(); clearInterval(S.timerId); $("#endBtn").disabled = true; $("#dadiEnd").disabled = true;
+  const p = $("#endPanel"); p.classList.remove("hidden");
+  p.innerHTML = `<p class="text-white flex items-center gap-2"><span class="wave flex items-center h-5"><span></span><span style="animation-delay:.1s"></span><span style="animation-delay:.2s"></span></span> Sarvam-105B is writing the complaint and the family alert…</p><div class="skeleton h-24 mt-3"></div>`;
+  p.scrollIntoView({ behavior: "smooth" });
+  try {
+    const r = await jpost(`/api/session/${S.sid}/end`); lat(r.latencies_ms); S.sid = null; S.dadi = false;
+    const risky = r.peak_score >= S.threshold;
+    const ev = (r.evidence_locker || []).map(i => `<li class="mono text-sm"><span class="dim">${esc((EV[i.kind] || EV.other)[1])}:</span> <span class="text-white">${esc(i.value)}</span></li>`).join("");
+    p.innerHTML = `<div class="flex flex-wrap justify-between items-center gap-3"><h2 class="text-2xl font-extrabold">📋 Call report</h2>
+        <div class="flex flex-wrap gap-2"><span class="chip" style="${risky ? "border-color:#ef4444;color:#fff" : "border-color:#22c55e;color:#fff"}">peak risk ${r.peak_score}/100</span>
+        <span class="chip">${esc((r.scam_type || "none").replace(/_/g, " "))}</span><span class="chip">call ${fmt(r.duration_s)}</span>${r.time_wasted_s ? `<span class="chip text-white">👵 scammer time wasted ${fmt(r.time_wasted_s)}</span>` : ""}</div></div>
+      ${r.complaint_en ? `<div class="grid md:grid-cols-2 gap-4 mt-4">
+        <div class="rounded-xl border border-neutral-800 p-4">
+          <div class="flex justify-between items-center text-xs"><b class="text-white">🚔 Complaint for 1930 / cybercrime.gov.in</b><a class="underline muted hover:text-white" href="https://cybercrime.gov.in" target="_blank" rel="noopener">open portal ↗</a></div>
+          <p class="mt-3 whitespace-pre-wrap text-sm text-neutral-100" id="cEn">${esc(r.complaint_en)}</p>
+          <p class="mt-3 whitespace-pre-wrap text-sm muted" id="cLoc">${esc(r.complaint_local)}</p>
+          <div class="mt-3 flex flex-wrap gap-2"><button class="copy btn btn-primary px-3 py-1.5 text-sm font-semibold" data-t="cEn">📋 Copy English</button>
+            <button class="copy btn px-3 py-1.5 text-sm" data-t="cLoc">📋 Copy ${esc(LANGS[$("#lang").value].split(" · ")[0])}</button>
+            <a href="tel:1930" class="btn px-3 py-1.5 text-sm font-semibold" style="border-color:#ef4444">📞 Call 1930</a></div>
+        </div>
+        <div class="flex flex-col gap-4">
+          <div class="rounded-xl border border-neutral-800 p-4">
+            <div class="flex justify-between items-center text-xs gap-2"><b class="text-white">💬 Family alert to Pappu (grandson)</b><span class="chip">SIMULATED · would send via WhatsApp/SMS in production</span></div>
+            <p class="mt-3 whitespace-pre-wrap text-neutral-100">${esc(r.family_alert_local)}</p>
+            <p class="mt-2 text-sm muted whitespace-pre-wrap">${esc(r.family_alert_en)}</p>
+            <button class="mt-3 btn px-3 py-1.5 text-sm" onclick="this.textContent='✓ Sent (simulated)';this.disabled=true">📲 Send alert</button>
+          </div>
+          ${ev ? `<div class="rounded-xl border border-neutral-800 p-4"><b class="text-xs text-white">🔒 Evidence attached</b><ul class="mt-2 space-y-1">${ev}</ul></div>` : ""}
+        </div></div>`
+      : `<p class="mt-3 muted">${r.error ? esc(r.error) : "Nothing was said on this call, so there is nothing to report."}</p>`}
+      <p class="mt-4 text-xs dim">🔒 The transcript and evidence have been deleted from the server. Tap ↺ to protect another call.</p>`;
+    p.querySelectorAll(".copy").forEach(b => b.onclick = async () => {
+      try { await navigator.clipboard.writeText($("#" + b.dataset.t).textContent); b.textContent = "✓ Copied"; }
+      catch { toast("Copy failed: select the text and copy it manually.", "info"); }
+    });
+  } catch (e) { p.innerHTML = `<p class="text-white">⚠️ ${esc(e.message)}</p>`; $("#endBtn").disabled = false; $("#dadiEnd").disabled = false; }
+}
+
+$("#resetBtn").onclick = () => location.reload();
+setGauge(null, 0); placeThreshold();
+api("/api/health").then(h => {
+  S.chunkMs = (h.chunk_seconds || 6) * 1000; S.threshold = h.threshold || 70; placeThreshold();
+  if (!h.key_loaded) toast("SARVAM_API_KEY is missing on the server. Copy .env.example to .env and add your key.");
+}).catch(e => toast(e.message));
+</script>
+</body>
+</html>
